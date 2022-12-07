@@ -4,13 +4,14 @@ use image::{ImageBuffer, GrayImage, Luma, imageops};
 use qr_types::{QRFactory, QRSymbolTypes, FinderLocations};
 
 pub fn save_qr_image(filepath: &String) -> Result<(), Box<dyn Error>> {
-    let qr_code = QRFactory::build_code(QRSymbolTypes::QRCode, 4);
+    let qr_code = QRFactory::build_code(QRSymbolTypes::QRCode, 2);
 
     let dimension = qr_code.module_width();
     let mut loud_region: GrayImage = ImageBuffer::from_pixel(dimension, dimension, Luma([128]));
 
     add_timing_patterns(&mut loud_region, qr_code.timing_coord());
     add_finder_patterns(&mut loud_region, qr_code.finder_locations());
+    add_alignment_patterns(&mut loud_region, qr_code.alignment_locations());
 
     let quiet_width = 4;
     let full_dimension = dimension + quiet_width * 2;
@@ -69,3 +70,12 @@ fn add_finder_pattern(buffer: &mut GrayImage, left: i64, top: i64) {
     imageops::overlay(buffer, &finder, left - 1, top - 1);
 }
 
+fn add_alignment_patterns(buffer: &mut GrayImage, locations: Vec<(u32, u32)>) {
+    for (cx, cy) in locations {
+        let five: GrayImage = ImageBuffer::from_pixel(5, 5, Luma([0]));
+        let three: GrayImage = ImageBuffer::from_pixel(3, 3, Luma([255]));
+        imageops::overlay(buffer, &five, (cx as i64) - 2, (cy as i64) - 2);
+        imageops::overlay(buffer, &three, (cx as i64) - 1, (cy as i64) - 1);
+        buffer.put_pixel(cx, cy, Luma([0]));
+    }
+}
