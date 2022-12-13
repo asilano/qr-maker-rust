@@ -1,12 +1,14 @@
 use std::process;
+use qr_generator::QRGenerator;
 
 fn main() {
-    let filepath = "./qr.png".to_string();
-    let ret = qr_generator::save_qr_image(&filepath);
-    ret.unwrap_or_else(|err| { 
+    let options = qr_generator::Options { ..Default::default() };
+    let generator = QRGenerator { options };
+    let ret = generator.make_qr_code("hi".to_string());
+    if let Err(err) = ret {
         println!("save_qr_image failed with {}", err); 
-        process::exit(1)
-    });
+        process::exit(1);
+    };
 
-    println!("Successfully saved {}", filepath);
+    println!("Successfully saved {}", ret.unwrap());
 }
