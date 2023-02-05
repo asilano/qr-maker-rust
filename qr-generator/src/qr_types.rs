@@ -107,6 +107,7 @@ impl QRSymbol for MicroQRCode {
     fn alignment_locations(&self) -> Vec<(u32, u32)> { Vec::new() }
 }
 
+#[derive(PartialEq)]
 pub enum QRSymbolTypes {
     QRCode,
     MicroQRCode,
