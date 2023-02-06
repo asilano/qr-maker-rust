@@ -1,19 +1,21 @@
 use crate::{QRGenerator, QRSymbolTypes, QRError, qr_errors::EncodingError, error_correction::CorrectionLevels};
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+#[derive(Eq, PartialEq, Clone, Copy, PartialOrd, Debug)]
 pub enum EncodingModes {
     Numeric,        // 0-9
     AlphaNumeric,   // 0-9, A-Z (ucase), sp, $%*+-./:
-    Byte,           // 0x00-0xFF
     Kanji,          // Shift-JIS
+    Byte,           // 0x00-0xFF
     Dynamic
 }
 type CharacterTypes = EncodingModes;
 
-#[derive(Eq, PartialEq, Debug)]
-struct CharTypeRun {
-    character_type: CharacterTypes,
-    run_length: u32
+#[derive(Eq, PartialEq, Default, Clone, Debug)]
+struct DistToNextType {
+    numeric: Option<usize>,
+    alpha_numeric: Option<usize>,
+    kanji: Option<usize>,
+    byte: Option<usize>
 }
 
 pub struct Encoder<'a> {
@@ -22,7 +24,7 @@ pub struct Encoder<'a> {
     pub output_data: Vec<u8>,
 
     size_estimate: u32,
-    data_run_lengths: Vec<CharTypeRun>
+    change_distances: Vec<DistToNextType>
 }
 
 impl<'a> Encoder<'a> {
@@ -32,7 +34,7 @@ impl<'a> Encoder<'a> {
             input_data,
             output_data: vec![],
             size_estimate: 0,
-            data_run_lengths: vec![]
+            change_distances: vec![]
         }
     }
 
@@ -41,7 +43,7 @@ impl<'a> Encoder<'a> {
         self.validate_data_stream_vs_options()?;
 
         self.estimate_size();
-        self.data_run_lengths = self.run_length_encode_data();
+        self.change_distances = Self::calculate_change_distances(&self.input_data);
 
         let mut current_encoding = self.generator.options.mode.unwrap_or(EncodingModes::Dynamic);
         let dynamic_mode = current_encoding == EncodingModes::Dynamic;
@@ -97,24 +99,24 @@ impl<'a> Encoder<'a> {
         // J2 a) 2) - IGNORED: Kanji mode first character
         if !first_char.is_ascii_digit() {
             // J2 a) 3) - If data starts Alphanumeric: start in Byte mode if a Byte within [6,7,8] chars; else AN
-            let dist_to_byte = if self.size_estimate <= 9 { 6 } else if self.size_estimate <= 26 { 7 } else { 8 };
-            if self.input_data.chars().take(dist_to_byte).any(|c| !Self::is_qr_alphanumeric(c)) {
-                EncodingModes::Byte
-            } else {
-                EncodingModes::AlphaNumeric
+            let dist_to_byte: usize = if self.size_estimate <= 9 { 6 } else if self.size_estimate <= 26 { 7 } else { 8 };
+            match self.change_distances[0].byte {
+                Some(dist) if dist < dist_to_byte => EncodingModes::Byte,
+                _ => EncodingModes::AlphaNumeric
             }
         } else {
             // J2 a) 4) - If data starts Numeric: start in Byte mode if a Byte within [4, 4, 5] chars; else
             // start in AN if an AN within [7, 8, 9] (and no Bytes first); else start in Numeric.
-            let dist_to_byte = if self.size_estimate <= 26 { 4 } else { 5 };
-            if self.input_data.chars().take(dist_to_byte).any(|c| !Self::is_qr_alphanumeric(c)) {
-                EncodingModes::Byte
-            } else {
-                let dist_to_an = if self.size_estimate <= 9 { 7 } else if self.size_estimate <= 26 { 8 } else { 9 };
-                let first_non_numeric = self.input_data.chars().take(dist_to_an).find(|c| !c.is_ascii_digit());
-                match first_non_numeric {
-                    Some(c) if Self::is_qr_alphanumeric(c) => EncodingModes::AlphaNumeric,
-                    _ => EncodingModes::Numeric
+            let dist_to_byte: usize = if self.size_estimate <= 26 { 4 } else { 5 };
+            match self.change_distances[0].byte {
+                Some(dist) if dist < dist_to_byte => EncodingModes::Byte,
+                _ =>  {
+                    let dist_to_an: usize = if self.size_estimate <= 9 { 7 } else if self.size_estimate <= 26 { 8 } else { 9 };
+                    match (self.change_distances[0].alpha_numeric, self.change_distances[0].byte) {
+                        (Some(dist_an), Some(dist_byte)) if dist_an < dist_to_an && dist_an < dist_byte => EncodingModes::AlphaNumeric,
+                        (Some(dist_an), None)  if dist_an < dist_to_an => EncodingModes::AlphaNumeric,
+                        _ => EncodingModes::Numeric
+                    }
                 }
             }
         }
@@ -139,23 +141,30 @@ impl<'a> Encoder<'a> {
         });
     }
 
-    fn run_length_encode_data(&self) -> Vec<CharTypeRun> {
-        let mut run_length = 0u32;
-        let mut data_run_lengths = vec![];
+    fn calculate_change_distances(input_data: &String) -> Vec<DistToNextType> {
+        let mut byte_rindex: Option<usize> = None;
+        let mut kanji_rindex: Option<usize> = None;
+        let mut alphanum_rindex: Option<usize> = None;
+        let mut numeric_rindex: Option<usize> = None;
+        let input_len = input_data.len();
+        let mut distances = vec![DistToNextType { ..Default::default() }; input_len];
 
-        let mut chars = self.input_data.chars().peekable();
-        let mut next_char_type = chars.peek().and_then(|&c| Some(Self::char_type(c)));
-        while chars.next().is_some() {
-            run_length += 1;
-            let character_type = next_char_type.unwrap();
-            next_char_type = chars.peek().and_then(|&c| Some(Self::char_type(c)));
+        for (from_end, c) in input_data.chars().rev().enumerate() {
+            match Self::char_type(c) {
+                CharacterTypes::Byte => byte_rindex = Some(from_end),
+                CharacterTypes::AlphaNumeric => alphanum_rindex = Some(from_end),
+                CharacterTypes::Numeric => numeric_rindex = Some(from_end),
+                _ => unreachable!()
+            };
 
-            if Some(character_type) != next_char_type {
-                data_run_lengths.push(CharTypeRun { character_type, run_length });
-                run_length = 0;
-            }
+            let byte = byte_rindex.and_then(|rix| Some(from_end - rix));
+            let alpha_numeric = alphanum_rindex.and_then(|rix| Some(from_end - rix));
+            let numeric = numeric_rindex.and_then(|rix| Some(from_end - rix));
+
+            distances[input_len - from_end - 1] = DistToNextType { numeric, alpha_numeric, kanji: None, byte };
         }
-        data_run_lengths
+
+        distances
     }
 
     fn is_qr_alphanumeric(c: char) -> bool {
@@ -262,80 +271,99 @@ mod tests {
     #[test]
     fn when_first_character_not_alphanum_starts_in_byte() {
         let generator = QRGenerator::default();
-        let encoder = Encoder::new(&generator, "#ABC123PLO.".to_string());
+        let mut encoder = Encoder::new(&generator, "#ABC123PLO.".to_string());
+        encoder.change_distances = Encoder::calculate_change_distances(&encoder.input_data);
         let mode = encoder.select_initial_encoding();
         assert_eq!(mode, EncodingModes::Byte);
     }
     #[test]
     fn when_first_character_alphanum_but_non_alphanum_follows_starts_in_byte() {
         let generator = QRGenerator::default();
-        let encoder = Encoder::new(&generator, "ABC1#23PLO.".to_string());
+        let mut encoder = Encoder::new(&generator, "ABC1#23PLO.".to_string());
+        encoder.change_distances = Encoder::calculate_change_distances(&encoder.input_data);
         let mode = encoder.select_initial_encoding();
         assert_eq!(mode, EncodingModes::Byte);
     }
     #[test]
     fn when_first_character_alphanum_and_non_alphanum_follows_much_later_starts_in_alphanum() {
         let generator = QRGenerator::default();
-        let encoder = Encoder::new(&generator, "ABC123#PLO.".to_string());
+        let mut encoder = Encoder::new(&generator, "ABC123#PLO.".to_string());
+        encoder.change_distances = Encoder::calculate_change_distances(&encoder.input_data);
         let mode = encoder.select_initial_encoding();
         assert_eq!(mode, EncodingModes::AlphaNumeric);
     }
     #[test]
     fn when_first_character_numeric_but_non_alphanum_follows_starts_in_byte() {
         let generator = QRGenerator::default();
-        let encoder = Encoder::new(&generator, "12#2423PLO.".to_string());
+        let mut encoder = Encoder::new(&generator, "12#2423PLO.".to_string());
+        encoder.change_distances = Encoder::calculate_change_distances(&encoder.input_data);
         let mode = encoder.select_initial_encoding();
         assert_eq!(mode, EncodingModes::Byte);
     }
     #[test]
     fn when_first_character_numeric_but_alphanum_follows_starts_in_alphanum() {
         let generator = QRGenerator::default();
-        let encoder = Encoder::new(&generator, "12345F456PLO.".to_string());
+        let mut encoder = Encoder::new(&generator, "12345F456PLO.".to_string());
+        encoder.change_distances = Encoder::calculate_change_distances(&encoder.input_data);
         let mode = encoder.select_initial_encoding();
         assert_eq!(mode, EncodingModes::AlphaNumeric);
     }
     #[test]
     fn when_first_character_numeric_and_non_alphanum_follows_much_later_starts_in_numeric() {
         let generator = QRGenerator::default();
-        let encoder = Encoder::new(&generator, "1234#PLO.".to_string());
+        let mut encoder = Encoder::new(&generator, "1234#PLO.".to_string());
+        encoder.change_distances = Encoder::calculate_change_distances(&encoder.input_data);
         let mode = encoder.select_initial_encoding();
         assert_eq!(mode, EncodingModes::Numeric);
     }
     #[test]
     fn when_first_character_numeric_and_alphanum_follows_much_later_starts_in_numeric() {
         let generator = QRGenerator::default();
-        let encoder = Encoder::new(&generator, "1234567PLO.".to_string());
+        let mut encoder = Encoder::new(&generator, "1234567PLO.".to_string());
+        encoder.change_distances = Encoder::calculate_change_distances(&encoder.input_data);
         let mode = encoder.select_initial_encoding();
         assert_eq!(mode, EncodingModes::Numeric);
     }
 
     #[test]
-    fn run_length_encoder_functions_as_expected() {
-        let generator = QRGenerator::default();
-
-        let encoder = Encoder::new(&generator, "1234567".to_string());
-        let run_length_encoding = encoder.run_length_encode_data();
-        assert_eq!(&run_length_encoding[..], &[CharTypeRun { character_type: CharacterTypes::Numeric, run_length: 7 }]);
-
-        let encoder = Encoder::new(&generator, "1234ABCD567".to_string());
-        let run_length_encoding = encoder.run_length_encode_data();
-        assert_eq!(&run_length_encoding[..],
+    fn change_distances_are_correctly_calculated() {
+        let distances = Encoder::calculate_change_distances(&"ABC".to_string());
+        assert_eq!(&distances[..],
             &[
-                CharTypeRun { character_type: CharacterTypes::Numeric, run_length: 4 },
-                CharTypeRun { character_type: CharacterTypes::AlphaNumeric, run_length: 4 },
-                CharTypeRun { character_type: CharacterTypes::Numeric, run_length: 3 },
+                DistToNextType { byte: None, alpha_numeric: Some(0), numeric: None, kanji: None},
+                DistToNextType { byte: None, alpha_numeric: Some(0), numeric: None, kanji: None},
+                DistToNextType { byte: None, alpha_numeric: Some(0), numeric: None, kanji: None},
             ]);
 
-        let encoder = Encoder::new(&generator, "#)1A345.G^@".to_string());
-        let run_length_encoding = encoder.run_length_encode_data();
-        assert_eq!(&run_length_encoding[..],
+        let distances = Encoder::calculate_change_distances(&"A1C".to_string());
+        assert_eq!(&distances[..],
             &[
-                CharTypeRun { character_type: CharacterTypes::Byte, run_length: 2 },
-                CharTypeRun { character_type: CharacterTypes::Numeric, run_length: 1 },
-                CharTypeRun { character_type: CharacterTypes::AlphaNumeric, run_length: 1 },
-                CharTypeRun { character_type: CharacterTypes::Numeric, run_length: 3 },
-                CharTypeRun { character_type: CharacterTypes::AlphaNumeric, run_length: 2 },
-                CharTypeRun { character_type: CharacterTypes::Byte, run_length: 2 },
+                DistToNextType { byte: None, alpha_numeric: Some(0), numeric: Some(1), kanji: None},
+                DistToNextType { byte: None, alpha_numeric: Some(1), numeric: Some(0), kanji: None},
+                DistToNextType { byte: None, alpha_numeric: Some(0), numeric: None, kanji: None},
+            ]);
+
+        let distances = Encoder::calculate_change_distances(&"^^^AAAA1111ZZ^^11A".to_string());
+        assert_eq!(&distances[..],
+            &[
+                DistToNextType { byte: Some(0), alpha_numeric: Some(3), numeric: Some(7), kanji: None},
+                DistToNextType { byte: Some(0), alpha_numeric: Some(2), numeric: Some(6), kanji: None},
+                DistToNextType { byte: Some(0), alpha_numeric: Some(1), numeric: Some(5), kanji: None},
+                DistToNextType { byte: Some(10), alpha_numeric: Some(0), numeric: Some(4), kanji: None},
+                DistToNextType { byte: Some(9), alpha_numeric: Some(0), numeric: Some(3), kanji: None},
+                DistToNextType { byte: Some(8), alpha_numeric: Some(0), numeric: Some(2), kanji: None},
+                DistToNextType { byte: Some(7), alpha_numeric: Some(0), numeric: Some(1), kanji: None},
+                DistToNextType { byte: Some(6), alpha_numeric: Some(4), numeric: Some(0), kanji: None},
+                DistToNextType { byte: Some(5), alpha_numeric: Some(3), numeric: Some(0), kanji: None},
+                DistToNextType { byte: Some(4), alpha_numeric: Some(2), numeric: Some(0), kanji: None},
+                DistToNextType { byte: Some(3), alpha_numeric: Some(1), numeric: Some(0), kanji: None},
+                DistToNextType { byte: Some(2), alpha_numeric: Some(0), numeric: Some(4), kanji: None},
+                DistToNextType { byte: Some(1), alpha_numeric: Some(0), numeric: Some(3), kanji: None},
+                DistToNextType { byte: Some(0), alpha_numeric: Some(4), numeric: Some(2), kanji: None},
+                DistToNextType { byte: Some(0), alpha_numeric: Some(3), numeric: Some(1), kanji: None},
+                DistToNextType { byte: None, alpha_numeric: Some(2), numeric: Some(0), kanji: None},
+                DistToNextType { byte: None, alpha_numeric: Some(1), numeric: Some(0), kanji: None},
+                DistToNextType { byte: None, alpha_numeric: Some(0), numeric: None, kanji: None},
             ]);
     }
 
