@@ -2,6 +2,7 @@ mod qr_types;
 mod encoder;
 mod error_correction;
 mod qr_errors;
+mod sizer;
 use qr_errors::QRError;
 use encoder::{Encoder, EncodingModes};
 use error_correction::CorrectionLevels;
@@ -36,8 +37,13 @@ impl QRGenerator {
       self.options.correction_level = Some(CorrectionLevels::Q);
     }
 
+    // Work out how large the QR code needs to be
+    self.calculate_version(&data)?;
+
     let mut encoder = Encoder::new(&self, data);
-    let data_codewords: Vec<u8> = encoder.encode_data_into_byte_stream()?;
+    encoder.encode_data_into_byte_stream()?;
+    let data_codewords = &encoder.output_data;
+
     // let data_blocks: Vec<Vec<u8>> = split_data_into_blocks(&data_codewords);
     // let err_correct_blocks: Vec<Vec<u8>> = generate_err_correction(&data_blocks);
     // let message_sequence: Vec<u8> = interleave_data_and_err_correct(data_blocks, err_correct_blocks);

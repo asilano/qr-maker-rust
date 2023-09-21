@@ -1,3 +1,6 @@
+use itertools::Itertools;
+use core::iter::Peekable;
+use bitvec::{prelude::*, vec::BitVec};
 use crate::{QRGenerator, QRSymbolTypes, QRError, qr_errors::EncodingError, error_correction::CorrectionLevels};
 
 #[derive(Eq, PartialEq, Clone, Copy, PartialOrd, Debug)]
@@ -21,7 +24,7 @@ struct DistToNextType {
 pub struct Encoder<'a> {
     generator: &'a QRGenerator,
     input_data: String,
-    pub output_data: Vec<u8>,
+    pub output_data: BitVec<u8, Msb0>,
 
     size_estimate: u32,
     change_distances: Vec<DistToNextType>
@@ -32,14 +35,17 @@ impl<'a> Encoder<'a> {
         Self {
             generator,
             input_data,
-            output_data: vec![],
+            output_data: bitvec![u8, Msb0;],
             size_estimate: 0,
             change_distances: vec![]
         }
     }
 
     // For the moment, we'll ignore Kanji encoding
-    pub fn encode_data_into_byte_stream(&mut self) -> Result<Vec<u8>, QRError> {
+    pub fn encode_data_into_byte_stream(&mut self) -> Result<(), QRError> {
+        if self.generator.options.qr_type == Some(QRSymbolTypes::MicroQRCode) {
+            panic!("Unimplemented select_initial_encoding for Micro QR codes");
+        }
         self.validate_data_stream_vs_options()?;
 
         self.estimate_size();
@@ -51,7 +57,19 @@ impl<'a> Encoder<'a> {
             current_encoding = self.select_initial_encoding();
         }
 
-        Ok(vec![1])
+        let mut input_iter = self.input_data.chars().zip(self.change_distances.iter()).peekable();
+        while input_iter.peek().is_some() {
+            let mut bit_run;
+            (current_encoding, bit_run) = match current_encoding {
+                EncodingModes::Numeric => Self::encode_numeric_run(&mut input_iter),
+                // EncodingModes::AlphaNumeric => self.encode_alphanumeric_run(&mut input_iter),
+                // EncodingModes::Byte => self.encode_byte_run(&mut input_iter),
+                _ => unreachable!()
+            };
+            self.output_data.append(&mut bit_run);
+        }
+
+        Ok(())
     }
 
     fn validate_data_stream_vs_options(&self) -> Result<(), EncodingError> {
@@ -120,6 +138,32 @@ impl<'a> Encoder<'a> {
                 }
             }
         }
+    }
+
+    fn encode_numeric_run<'b, Input>(input: &mut Peekable<Input>) -> (EncodingModes, BitVec<u8, Msb0>)
+    where Input: Iterator<Item=(char, &'b DistToNextType)> {
+        let numbers = input.peeking_take_while(|(c, _)| c.is_ascii_digit());
+        let mut char_count = 0usize;
+        let mut encoded_numbers = bitvec![u8, Msb0;];
+
+        for chunk in &numbers.chunks(3) {
+            let digits_str: String = chunk.map(|(c, _)| c).collect();
+            let chunk_size = digits_str.len();
+            char_count += chunk_size;
+
+            let bit_count = match chunk_size {
+                3 => 10,
+                2 => 7,
+                1 => 4,
+                _ => unreachable!()
+            };
+            let value = digits_str.parse::<u16>().expect("Non-number in numeric run");
+            let mut bits = bitarr![u16, Msb0; 0; 10];
+            bits[0..bit_count].store(value);
+            encoded_numbers.extend_from_bitslice(&bits[0..bit_count]);
+        }
+
+        (EncodingModes::Numeric, encoded_numbers)
     }
 
     // Get a rough guess of how large a QR-code this will be. It doesn't need to be exact -
@@ -365,6 +409,17 @@ mod tests {
                 DistToNextType { byte: None, alpha_numeric: Some(1), numeric: Some(0), kanji: None},
                 DistToNextType { byte: None, alpha_numeric: Some(0), numeric: None, kanji: None},
             ]);
+    }
+
+    #[test]
+    fn encodes_numeric_run_correctly() {
+        let generator = QRGenerator::default();
+        let mut encoder = Encoder::new(&generator, "01234567".to_string());
+        encoder.change_distances = Encoder::calculate_change_distances(&encoder.input_data);
+        let mut input = encoder.input_data.chars().zip(encoder.change_distances.iter()).peekable();
+        let (_, encoded_run) = Encoder::encode_numeric_run(&mut input);
+
+        assert_eq!(encoded_run.as_bitslice(), bits![u8, Msb0; 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1]);
     }
 
     #[test]
