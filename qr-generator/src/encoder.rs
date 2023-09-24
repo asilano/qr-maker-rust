@@ -82,6 +82,7 @@ impl<'a> Encoder<'a> {
             current_encoding = next_encoding;
         }
 
+        self.output_data.append(&mut self.terminator());
         Ok(())
     }
 
@@ -304,6 +305,24 @@ impl<'a> Encoder<'a> {
         sequence_preamble.append(&mut len_indicator);
 
         sequence_preamble
+    }
+
+    fn terminator(&self) -> BitVec<u8, Msb0> {
+        let terminator_len = match self.generator.options.qr_type {
+            Some(QRSymbolTypes::MicroQRCode) => {
+                match self.generator.options.version {
+                    Some(1) => 3,
+                    Some(2) => 5,
+                    Some(3) => 7,
+                    Some(4) => 9,
+                    _ => unreachable!()
+                }
+            },
+            Some(QRSymbolTypes::QRCode) => 4,
+            _ => unreachable!()
+        };
+
+        bitvec![u8, Msb0; 0; terminator_len]
     }
 
     // Get a rough guess of how large a QR-code this will be. It doesn't need to be exact -
