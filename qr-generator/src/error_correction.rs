@@ -4,5 +4,5 @@ pub enum CorrectionLevels {
     L,
     M,
     Q,
-    H
+    H,
 }

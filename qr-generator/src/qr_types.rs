@@ -2,10 +2,10 @@
 pub enum FinderLocations {
     TopLeft,
     TopRight,
-    BottomLeft
+    BottomLeft,
 }
-use FinderLocations::*;
 use itertools::Itertools;
+use FinderLocations::*;
 
 pub trait QRSymbol {
     fn module_width(&self) -> u32;
@@ -60,7 +60,7 @@ impl QRCode {
             38 => vec![6, 32, 58, 84, 110, 136, 162],
             39 => vec![6, 26, 54, 82, 110, 138, 166],
             40 => vec![6, 30, 58, 86, 114, 142, 170],
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -68,7 +68,9 @@ impl QRSymbol for QRCode {
     fn module_width(&self) -> u32 {
         21 + 4 * (self.version - 1)
     }
-    fn timing_coord(&self) -> u32 { 6 }
+    fn timing_coord(&self) -> u32 {
+        6
+    }
     fn finder_locations(&self) -> Vec<FinderLocations> {
         vec![TopLeft, TopRight, BottomLeft]
     }
@@ -81,15 +83,18 @@ impl QRSymbol for QRCode {
         let min = coords[0];
         let max = *coords.last().unwrap();
 
-        coords.iter().cartesian_product(coords.iter()).filter_map(|(x, y)| {
-            if (*x == min && *y == min) ||
-                (*x == min && *y == max) ||
-                (*x == max && *y == min) {
+        coords
+            .iter()
+            .cartesian_product(coords.iter())
+            .filter_map(|(x, y)| {
+                if (*x == min && *y == min) || (*x == min && *y == max) || (*x == max && *y == min)
+                {
                     None
-            } else {
-                Some((*x, *y))
-            }
-        }).collect()
+                } else {
+                    Some((*x, *y))
+                }
+            })
+            .collect()
     }
 }
 
@@ -100,11 +105,15 @@ impl QRSymbol for MicroQRCode {
     fn module_width(&self) -> u32 {
         11 + 2 * (self.version - 1)
     }
-    fn timing_coord(&self) -> u32 { 0 }
+    fn timing_coord(&self) -> u32 {
+        0
+    }
     fn finder_locations(&self) -> Vec<FinderLocations> {
         vec![TopLeft]
-    } 
-    fn alignment_locations(&self) -> Vec<(u32, u32)> { Vec::new() }
+    }
+    fn alignment_locations(&self) -> Vec<(u32, u32)> {
+        Vec::new()
+    }
 }
 
 #[derive(PartialEq)]
@@ -128,70 +137,85 @@ mod tests {
 
     #[test]
     fn qr_code_has_correct_width_v1() {
-        assert_eq!(QRCode {version: 1}.module_width(), 21);
+        assert_eq!(QRCode { version: 1 }.module_width(), 21);
     }
     #[test]
     fn qr_code_has_correct_width_v7() {
-        assert_eq!(QRCode {version: 7}.module_width(), 45);
+        assert_eq!(QRCode { version: 7 }.module_width(), 45);
     }
     #[test]
     fn qr_code_has_correct_width_v40() {
-        assert_eq!(QRCode {version: 40}.module_width(), 177);
+        assert_eq!(QRCode { version: 40 }.module_width(), 177);
     }
 
     #[test]
     fn micro_qr_code_has_correct_width_v1() {
-        assert_eq!(MicroQRCode {version: 1}.module_width(), 11);
+        assert_eq!(MicroQRCode { version: 1 }.module_width(), 11);
     }
     #[test]
     fn micro_qr_code_has_correct_width_v2() {
-        assert_eq!(MicroQRCode {version: 2}.module_width(), 13);
+        assert_eq!(MicroQRCode { version: 2 }.module_width(), 13);
     }
     #[test]
     fn micro_qr_code_has_correct_width_v4() {
-        assert_eq!(MicroQRCode {version: 4}.module_width(), 17);
+        assert_eq!(MicroQRCode { version: 4 }.module_width(), 17);
     }
 
     #[test]
     fn qr_code_timing_in_correct_place() {
-        assert_eq!(QRCode {version: 5}.timing_coord(), 6);
+        assert_eq!(QRCode { version: 5 }.timing_coord(), 6);
     }
     #[test]
     fn micro_qr_code_timing_in_correct_place() {
-        assert_eq!(MicroQRCode {version: 3}.timing_coord(), 0);
+        assert_eq!(MicroQRCode { version: 3 }.timing_coord(), 0);
     }
 
     #[test]
     fn qr_code_three_finders() {
-        assert_eq!(QRCode {version: 15}.finder_locations(), vec![TopLeft, TopRight, BottomLeft]);
+        assert_eq!(
+            QRCode { version: 15 }.finder_locations(),
+            vec![TopLeft, TopRight, BottomLeft]
+        );
     }
     #[test]
     fn micro_qr_code_one_finder() {
-        assert_eq!(MicroQRCode {version: 1}.finder_locations(), vec![TopLeft]);
+        assert_eq!(MicroQRCode { version: 1 }.finder_locations(), vec![TopLeft]);
     }
 
     #[test]
     fn qr_code_v1_has_no_alignment() {
-        assert!(QRCode {version: 1}.alignment_locations().is_empty());
+        assert!(QRCode { version: 1 }.alignment_locations().is_empty());
     }
     #[test]
     fn qr_code_v2_has_one_alignment() {
-        assert_eq!(QRCode {version: 2}.alignment_locations().iter().count(), 1);
+        assert_eq!(
+            QRCode { version: 2 }.alignment_locations().iter().count(),
+            1
+        );
     }
     #[test]
     fn qr_code_v9_has_six_alignments() {
-        assert_eq!(QRCode {version: 9}.alignment_locations().iter().count(), 6);
+        assert_eq!(
+            QRCode { version: 9 }.alignment_locations().iter().count(),
+            6
+        );
     }
     #[test]
     fn qr_code_v27_has_22_alignments() {
-        assert_eq!(QRCode {version: 27}.alignment_locations().iter().count(), 22);
+        assert_eq!(
+            QRCode { version: 27 }.alignment_locations().iter().count(),
+            22
+        );
     }
     #[test]
     fn qr_code_v40_has_46_alignments() {
-        assert_eq!(QRCode {version: 40}.alignment_locations().iter().count(), 46);
+        assert_eq!(
+            QRCode { version: 40 }.alignment_locations().iter().count(),
+            46
+        );
     }
     #[test]
     fn micro_qr_code_v4_has_no_alignments() {
-        assert!(MicroQRCode {version: 4}.alignment_locations().is_empty());
+        assert!(MicroQRCode { version: 4 }.alignment_locations().is_empty());
     }
 }
