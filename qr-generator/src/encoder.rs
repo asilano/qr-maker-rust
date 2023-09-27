@@ -83,6 +83,8 @@ impl<'a> Encoder<'a> {
         }
 
         self.output_data.append(&mut self.terminator());
+        self.output_data.append(&mut self.padding_to_codeword_boundary());
+        // self.output_data.append(&mut self.padding_codewords());
         Ok(())
     }
 
@@ -325,6 +327,13 @@ impl<'a> Encoder<'a> {
         bitvec![u8, Msb0; 0; terminator_len]
     }
 
+    fn padding_to_codeword_boundary(&self) -> BitVec<u8, Msb0> {
+        let remainder = self.output_data.len() % 8;
+        let pad_len = 8 - remainder;
+
+        bitvec![u8, Msb0; 0; pad_len]
+    }
+
     // Get a rough guess of how large a QR-code this will be. It doesn't need to be exact -
     // we only care about the thresholds <=9, <=26 and over. Assume we're going to use Byte
     // mode.
@@ -350,8 +359,8 @@ impl<'a> Encoder<'a> {
 
         self.size_estimate = match size_estimate {
             (0..=9) => 9,
-            (9..=26) => 26,
-            (26..) => 40
+            (10..=26) => 26,
+            (27..) => 40
         };
     }
 
