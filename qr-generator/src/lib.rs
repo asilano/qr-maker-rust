@@ -8,6 +8,7 @@ use error_correction::CorrectionLevels;
 use image::{imageops, GrayImage, ImageBuffer, Luma};
 use qr_errors::QRError;
 use qr_types::{FinderLocations, QRFactory};
+use sizer::Sizer;
 pub use qr_types::QRSymbolTypes;
 
 #[derive(Default)]
@@ -44,7 +45,9 @@ impl QRGenerator {
         }
 
         // Work out how large the QR code needs to be
-        self.calculate_version(&data)?;
+        if self.options.version.is_none() {
+          self.options.version = Some(Sizer::calculate_version(&self.options, &data)?);
+        }
 
         let mut encoder = Encoder::new(&self, data);
         encoder.encode_data_into_byte_stream()?;

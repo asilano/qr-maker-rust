@@ -1,26 +1,22 @@
 use crate::{
     encoder::EncodingModes, error_correction::CorrectionLevels, qr_errors::EncodingError, QRError,
-    QRGenerator, QRSymbolTypes,
+    QRGenerator, QRSymbolTypes, Options,
 };
+pub struct Sizer;
 
-impl QRGenerator {
-    pub(super) fn calculate_version(&mut self, data: &String) -> Result<(), QRError> {
-        if self.options.version.is_some() {
-            return Ok(());
-        }
-
-        let correction = self.options.correction_level.as_ref().unwrap();
-        let mode = self.options.mode.unwrap_or(EncodingModes::Dynamic);
-        self.options.version = Some(match self.options.qr_type {
+impl Sizer {
+    pub(crate) fn calculate_version(options: &Options, data: &String) -> Result<u32, QRError> {
+        let correction = options.correction_level.as_ref().unwrap();
+        let mode = options.mode.unwrap_or(EncodingModes::Dynamic);
+        match options.qr_type {
           Some(QRSymbolTypes::MicroQRCode) => {
-              Self::calculate_micro_version(correction, mode, data)?
+              Ok(Self::calculate_micro_version(correction, mode, data)?)
           }
           Some(QRSymbolTypes::QRCode) => {
-              Self::calculate_standard_version(correction, mode, data)?
+              Ok(Self::calculate_standard_version(correction, mode, data)?)
           }
           None => unreachable!(),
-        });
-        Ok(())
+        }
     }
 
     fn calculate_micro_version(
