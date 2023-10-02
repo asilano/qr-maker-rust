@@ -7,9 +7,11 @@ use encoder::{Encoder, EncodingModes};
 use error_correction::CorrectionLevels;
 use image::{imageops, GrayImage, ImageBuffer, Luma};
 use qr_errors::QRError;
+pub use qr_types::QRSymbolTypes;
 use qr_types::{FinderLocations, QRFactory};
 use sizer::Sizer;
-pub use qr_types::QRSymbolTypes;
+
+use crate::error_correction::ErrorCorrector;
 
 #[derive(Default)]
 pub struct Options {
@@ -46,15 +48,27 @@ impl QRGenerator {
 
         // Work out how large the QR code needs to be
         if self.options.version.is_none() {
-          self.options.version = Some(Sizer::calculate_version(&self.options, &data)?);
+            self.options.version = Some(Sizer::calculate_version(&self.options, &data)?);
         }
 
         let mut encoder = Encoder::new(&self, data);
         encoder.encode_data_into_byte_stream()?;
-        let data_codewords = &encoder.output_data;
-        println!("{:?}", data_codewords);
+        let data_bitstream = &encoder.output_data;
+        let data_codewords = data_bitstream.clone().into_vec();
 
-        // let data_blocks: Vec<Vec<u8>> = split_data_into_blocks(&data_codewords);
+        println!("Version: {}, Correction: {:?}", self.options.version.unwrap(), self.options.correction_level.as_ref().unwrap());
+        println!("{}", data_bitstream.iter().map(|b| if *b {"1"} else {"0"}).collect::<Vec<&str>>().join(""));
+        println!("{} bits", data_bitstream.len());
+
+        println!("{}", data_codewords.iter().map(|&n| n.to_string()).collect::<Vec<String>>().join(" "));
+
+        let mut error_corrector = ErrorCorrector::from(&Sizer::error_correction_shape(
+          self.options.qr_type.as_ref().unwrap(),
+          self.options.version.unwrap(),
+          self.options.correction_level.as_ref().unwrap(),
+        ));
+        error_corrector.fill_data_into_blocks(data_codewords);
+
         // let err_correct_blocks: Vec<Vec<u8>> = generate_err_correction(&data_blocks);
         // let message_sequence: Vec<u8> = interleave_data_and_err_correct(data_blocks, err_correct_blocks);
         let message_sequence: Vec<u8> = vec![];
@@ -64,6 +78,10 @@ impl QRGenerator {
         self.save_qr_image(&"./qr_code.png".to_string(), unmasked_image)?;
         Ok("./qr_code.png".to_string())
     }
+
+    // fn split_data_into_blocks(data_codewords: &Vec<u8>) -> Vec<Vec<u8>> {
+
+    // }
 
     fn build_qr_image(&self, message: Vec<u8>) -> GrayImage {
         let qr_code = QRFactory::build_code(QRSymbolTypes::QRCode, 2);

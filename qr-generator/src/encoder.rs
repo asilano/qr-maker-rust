@@ -1,11 +1,11 @@
 use crate::{
-    error_correction::CorrectionLevels, qr_errors::EncodingError, QRError, QRGenerator,
-    QRSymbolTypes,
+    error_correction::CorrectionLevels, qr_errors::EncodingError, sizer::Sizer, QRError,
+    QRGenerator, QRSymbolTypes,
 };
 use bitvec::{prelude::*, vec::BitVec};
 use core::iter::Peekable;
-use std::collections::HashMap;
 use itertools::Itertools;
+use std::collections::HashMap;
 
 #[derive(Eq, PartialEq, Clone, Copy, PartialOrd, Debug)]
 pub enum EncodingModes {
@@ -77,14 +77,16 @@ impl<'a> Encoder<'a> {
                 // EncodingModes::Byte => self.encode_byte_run(&mut input_iter),
                 _ => unreachable!(),
             };
-            self.output_data.append(&mut self.sequence_preamble(current_encoding, char_count));
+            self.output_data
+                .append(&mut self.sequence_preamble(current_encoding, char_count));
             self.output_data.append(&mut bit_run);
             current_encoding = next_encoding;
         }
 
         self.output_data.append(&mut self.terminator());
-        self.output_data.append(&mut self.padding_to_codeword_boundary());
-        // self.output_data.append(&mut self.padding_codewords());
+        self.output_data
+            .append(&mut self.padding_to_codeword_boundary());
+        self.output_data.append(&mut self.padding_codewords()?);
         Ok(())
     }
 
@@ -247,22 +249,22 @@ impl<'a> Encoder<'a> {
                         EncodingModes::AlphaNumeric => 1,
                         EncodingModes::Byte => 2,
                         EncodingModes::Kanji => 3,
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     })
                 }
                 sequence_preamble.append(&mut mode_indicator);
-            },
+            }
             Some(QRSymbolTypes::QRCode) => {
                 let mut mode_indicator: BitVec<u8, Msb0> = match encoding {
                     EncodingModes::Numeric => bitvec![u8, Msb0; 0, 0, 0, 1],
                     EncodingModes::AlphaNumeric => bitvec![u8, Msb0; 0, 0, 1, 0],
                     EncodingModes::Byte => bitvec![u8, Msb0; 0, 1, 0, 0],
                     EncodingModes::Kanji => bitvec![u8, Msb0; 1, 0, 0, 0],
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 };
                 sequence_preamble.append(&mut mode_indicator);
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         };
 
         let len_indicator_len: usize = match self.generator.options.qr_type {
@@ -272,35 +274,20 @@ impl<'a> Encoder<'a> {
                     EncodingModes::AlphaNumeric => 1 + self.generator.options.version.unwrap(),
                     EncodingModes::Byte => 1 + self.generator.options.version.unwrap(),
                     EncodingModes::Kanji => self.generator.options.version.unwrap(),
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 }) as usize
-            },
-            Some(QRSymbolTypes::QRCode) => {
-                match encoding {
-                    EncodingModes::Numeric => HashMap::from([
-                        (9, 10),
-                        (26, 12),
-                        (40, 14)
-                    ]),
-                    EncodingModes::AlphaNumeric => HashMap::from([
-                        (9, 9),
-                        (26, 11),
-                        (40, 13)
-                    ]),
-                    EncodingModes::Byte => HashMap::from([
-                        (9, 8),
-                        (26, 16),
-                        (40, 16)
-                    ]),
-                    EncodingModes::Kanji => HashMap::from([
-                        (9, 8),
-                        (26, 10),
-                        (40, 12)
-                    ]),
-                    _ => unreachable!()
-                }.get(&self.size_estimate).unwrap().clone() as usize
-            },
-            _ => unreachable!()
+            }
+            Some(QRSymbolTypes::QRCode) => match encoding {
+                EncodingModes::Numeric => HashMap::from([(9, 10), (26, 12), (40, 14)]),
+                EncodingModes::AlphaNumeric => HashMap::from([(9, 9), (26, 11), (40, 13)]),
+                EncodingModes::Byte => HashMap::from([(9, 8), (26, 16), (40, 16)]),
+                EncodingModes::Kanji => HashMap::from([(9, 8), (26, 10), (40, 12)]),
+                _ => unreachable!(),
+            }
+            .get(&self.size_estimate)
+            .unwrap()
+            .clone() as usize,
+            _ => unreachable!(),
         };
         let mut len_indicator = bitvec![u16, Msb0; 0; len_indicator_len];
         len_indicator[0..len_indicator_len].store(char_count);
@@ -311,17 +298,15 @@ impl<'a> Encoder<'a> {
 
     fn terminator(&self) -> BitVec<u8, Msb0> {
         let terminator_len = match self.generator.options.qr_type {
-            Some(QRSymbolTypes::MicroQRCode) => {
-                match self.generator.options.version {
-                    Some(1) => 3,
-                    Some(2) => 5,
-                    Some(3) => 7,
-                    Some(4) => 9,
-                    _ => unreachable!()
-                }
+            Some(QRSymbolTypes::MicroQRCode) => match self.generator.options.version {
+                Some(1) => 3,
+                Some(2) => 5,
+                Some(3) => 7,
+                Some(4) => 9,
+                _ => unreachable!(),
             },
             Some(QRSymbolTypes::QRCode) => 4,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         bitvec![u8, Msb0; 0; terminator_len]
@@ -332,6 +317,36 @@ impl<'a> Encoder<'a> {
         let pad_len = 8 - remainder;
 
         bitvec![u8, Msb0; 0; pad_len]
+    }
+
+    fn padding_codewords(&self) -> Result<BitVec<u8, Msb0>, EncodingError> {
+        let total_codewords = Sizer::data_codeword_capacity(
+            self.generator.options.qr_type.as_ref().unwrap(),
+            self.generator.options.version.unwrap(),
+            self.generator.options.correction_level.as_ref().unwrap(),
+        );
+
+        // Allow up to 4 bits more than the data capacity - that would just indicate a complete-full M1 or M3 code
+        if self.output_data.len() > (total_codewords * 8) + 4 {
+            return Err(EncodingError::new("Too much data for specified code size."));
+        }
+
+        let padding_amount = total_codewords - self.output_data.len() / 8;
+        let mut padding_codewords = bitvec![u8, Msb0;];
+        for pad in 0..padding_amount {
+            if pad == padding_amount - 1 && self.generator.options.qr_type == Some(QRSymbolTypes::MicroQRCode) && (self.generator.options.version == Some(1) || self.generator.options.version == Some(3)) {
+                padding_codewords.append(&mut bitvec![u8, Msb0; 0, 0, 0, 0]);
+            }
+            else {
+                padding_codewords.append(&mut match pad % 2 {
+                    0 => bitvec![u8, Msb0; 1, 1, 1, 0, 1, 1, 0, 0],
+                    1 => bitvec![u8, Msb0; 0, 0, 0, 1, 0, 0, 0, 1],
+                    _ => unreachable!()
+                });
+            }
+        }
+
+        Ok(padding_codewords)
     }
 
     // Get a rough guess of how large a QR-code this will be. It doesn't need to be exact -
@@ -360,7 +375,7 @@ impl<'a> Encoder<'a> {
         self.size_estimate = match size_estimate {
             (0..=9) => 9,
             (10..=26) => 26,
-            (27..) => 40
+            (27..) => 40,
         };
     }
 
@@ -736,7 +751,7 @@ mod tests {
             .chars()
             .zip(encoder.change_distances.iter())
             .peekable();
-        let (_, encoded_run) = Encoder::encode_numeric_run(&mut input);
+        let (_, encoded_run, _) = Encoder::encode_numeric_run(&mut input);
 
         assert_eq!(
             encoded_run.as_bitslice(),
