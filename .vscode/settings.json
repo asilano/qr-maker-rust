@@ -1,6 +1,7 @@
 {
   "rust-analyzer.linkedProjects": [
     "./qr-generator/Cargo.toml",
-    "./Cargo.toml"
+    "./Cargo.toml",
+    "./polynomial-arithmetic/Cargo.toml"
   ]
 }
