@@ -1,4 +1,4 @@
-mod int_mod;
+pub mod int_mod;
 use std::{
     iter,
     ops::{Add, Div, Mul, Sub, Rem},
@@ -224,7 +224,6 @@ impl<CoeffType> From<Vec<CoeffType>> for Polynomial<CoeffType> {
 #[cfg(test)]
 mod tests {
     use crate::int_mod::IntMod;
-
     use super::*;
 
     #[test]

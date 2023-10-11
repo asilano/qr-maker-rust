@@ -3,6 +3,6 @@
     "./qr-generator/Cargo.toml",
     "./Cargo.toml",
     "./polynomial-arithmetic/Cargo.toml",
-    "./polynomial-arithmetic/Cargo.toml"
+    "./galois-field/Cargo.toml"
   ]
 }
