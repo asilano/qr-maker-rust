@@ -1,22 +1,23 @@
 use std::ops::{Add, Sub, Mul, Div, Rem};
 
+use polynomial_arithmetic::Polynomial;
+
 #[derive(Debug, PartialEq)]
-pub struct PolyModPoly<Polynomial>
-where Polynomial: PartialEq
+pub struct PolyModPoly<Polynomial: PartialEq>
 {
   pub poly: Polynomial,
-  primitive: Polynomial
+  prime: Polynomial
 }
 
 impl<Polynomial> Add for &PolyModPoly<Polynomial>
-where Polynomial: Clone + PartialEq,
+where Polynomial: Add + Clone + PartialEq,
   for<'a> &'a Polynomial: Add<Output = Polynomial> {
   type Output = PolyModPoly<Polynomial>;
 
   fn add(self, other: &PolyModPoly<Polynomial>) -> PolyModPoly<Polynomial> {
     PolyModPoly::<Polynomial> {
       poly: &self.poly + &other.poly,
-      primitive: self.primitive.clone()
+      prime: self.prime.clone()
     }
   }
 }
@@ -28,8 +29,8 @@ where Polynomial: Clone + PartialEq,
 
   fn mul(self, other: &PolyModPoly<Polynomial>) -> PolyModPoly<Polynomial> {
     PolyModPoly::<Polynomial> {
-      poly: &(&self.poly * &other.poly) % &self.primitive,
-      primitive: self.primitive.clone()
+      poly: &(&self.poly * &other.poly) % &self.prime,
+      prime: self.prime.clone()
     }
   }
 }
@@ -37,7 +38,8 @@ where Polynomial: Clone + PartialEq,
 pub struct GaloisField<Polynomial>
 where Polynomial: PartialEq + Clone
 {
-  primitive: Polynomial
+  pub primitive: Polynomial,
+  pub prime: Polynomial
 }
 impl<Polynomial> GaloisField<Polynomial>
 where Polynomial: Clone + PartialEq,
@@ -45,8 +47,8 @@ where Polynomial: Clone + PartialEq,
 {
   pub fn make_polynomial(&self, poly: Polynomial) -> PolyModPoly<Polynomial> {
     PolyModPoly {
-      poly: &poly % &self.primitive,
-      primitive: self.primitive.clone()
+      poly: &poly % &self.prime,
+      prime: self.prime.clone()
     }
   }
 }
@@ -60,18 +62,18 @@ mod tests {
   fn test_addition_in_GF9() {
     // Test that (x + 2) + (x + 1) = 2x
     type Element = Polynomial<IntMod<3>>;
-    let primitive = Element::from([2, 2, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>());
+    let prime = Element::from([2, 2, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>());
     let lhs = PolyModPoly::<Element> {
       poly: Element::from([2, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>()),
-      primitive: primitive.clone()
+      prime: prime.clone()
     };
     let rhs = PolyModPoly::<Element> {
       poly: Element::from([1, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>()),
-      primitive: primitive.clone()
+      prime: prime.clone()
     };
     let result = PolyModPoly::<Element> {
       poly: Element::from([0, 2].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>()),
-      primitive: primitive.clone()
+      prime: prime.clone()
     };
     assert_eq!(&lhs + &rhs, result);
   }
@@ -80,8 +82,10 @@ mod tests {
   fn test_multiplication_in_GF9() {
     // Test that (x + 2)(x + 1) = x
     type Element = Polynomial<IntMod<3>>;
-    let primitive = Element::from([2, 2, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>());
-    let gf9 = GaloisField::<Polynomial<IntMod<3>>> {
+    let prime = Element::from([2, 2, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>());
+    let primitive = Element::from(vec![IntMod::<3>::from(0), IntMod::<3>::from(1)]);
+    let gf9 = GaloisField::<Element> {
+      prime,
       primitive
     };
     let lhs = gf9.make_polynomial(Element::from([2, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>()));

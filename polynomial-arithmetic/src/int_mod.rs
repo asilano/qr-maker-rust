@@ -1,6 +1,14 @@
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub use num::traits::{Zero, One};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct IntMod<const MODULUS: u32> {
     pub value: u32,
+}
+
+impl<const MODULUS: u32> Debug for IntMod<MODULUS> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
 }
 
 impl<const MODULUS: u32> From<u32> for IntMod<MODULUS> {
@@ -11,6 +19,30 @@ impl<const MODULUS: u32> From<u32> for IntMod<MODULUS> {
     }
 }
 
+impl<const MODULUS: u32> Zero for IntMod<MODULUS> {
+    fn zero() -> Self {
+        Self { value: 0 }
+    }
+    fn is_zero(&self) -> bool {
+        self.value == 0
+    }
+    fn set_zero(&mut self) {
+        self.value = 0;
+    }
+}
+impl<const MODULUS: u32> One for IntMod<MODULUS> {
+    fn one() -> Self {
+        Self { value: 1 }
+    }
+    fn is_one(&self) -> bool {
+        self.value == 1
+    }
+    fn set_one(&mut self) {
+        self.value = 1;
+    }
+}
+
+use std::fmt::Debug;
 use std::ops::Add;
 impl<const MODULUS: u32> Add for IntMod<MODULUS> {
     type Output = Self;
@@ -118,6 +150,32 @@ impl<const MODULUS: u32> Div<&IntMod<MODULUS>> for IntMod<MODULUS> {
     type Output = IntMod<MODULUS>;
     fn div(self, other: &IntMod<MODULUS>) -> Self::Output {
         self / *other
+    }
+}
+
+use std::ops::Rem;
+impl<const MODULUS: u32> Rem for IntMod<MODULUS> {
+    type Output = IntMod<MODULUS>;
+    fn rem(self, _other: IntMod<MODULUS>) -> Self::Output {
+        Self { value: 0 }
+    }
+}
+impl<const MODULUS: u32> Rem<IntMod<MODULUS>> for &IntMod<MODULUS> {
+    type Output = IntMod<MODULUS>;
+    fn rem(self, other: IntMod<MODULUS>) -> Self::Output {
+        *self % other
+    }
+}
+impl<const MODULUS: u32> Rem<&IntMod<MODULUS>> for &IntMod<MODULUS> {
+    type Output = IntMod<MODULUS>;
+    fn rem(self, other: &IntMod<MODULUS>) -> Self::Output {
+        *self % *other
+    }
+}
+impl<const MODULUS: u32> Rem<&IntMod<MODULUS>> for IntMod<MODULUS> {
+    type Output = IntMod<MODULUS>;
+    fn rem(self, other: &IntMod<MODULUS>) -> Self::Output {
+        self % *other
     }
 }
 

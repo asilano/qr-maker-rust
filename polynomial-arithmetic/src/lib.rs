@@ -1,8 +1,10 @@
 pub mod int_mod;
 use std::{
     iter,
-    ops::{Add, Div, Mul, Sub, Rem},
+    ops::{Add, Div, Mul, Rem, Sub}, fmt::Debug, any::Any,
 };
+
+pub use int_mod::{IntMod, Zero, One};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Polynomial<CoeffType> {
@@ -11,7 +13,8 @@ pub struct Polynomial<CoeffType> {
 
 impl<CoeffType> Add for &Polynomial<CoeffType>
 where
-    CoeffType: Add<Output = CoeffType> + Copy + From<u32> + PartialEq,
+    CoeffType: Add<Output = CoeffType> + Zero + PartialEq,
+    for<'a> &'a CoeffType: Add<Output = CoeffType>,
 {
     type Output = Polynomial<CoeffType>;
 
@@ -28,18 +31,29 @@ where
 
         let coefficients = longer
             .iter()
-            .zip(shorter.iter().chain(iter::repeat(&CoeffType::from(0))))
-            .map(|(&left, &right)| left + right)
+            .zip(shorter.iter().chain(iter::repeat(&CoeffType::zero())))
+            .map(|(left, right)| left + right)
             .collect::<Vec<CoeffType>>();
         let mut sum = Polynomial { coefficients };
         sum.reduce();
         sum
     }
 }
+impl<CoeffType> Add for Polynomial<CoeffType>
+where
+    CoeffType: Add<Output = CoeffType> + Zero + PartialEq,
+    for<'a> &'a CoeffType: Add<Output = CoeffType>,
+{
+    type Output = Polynomial<CoeffType>;
+    fn add(self, other: Self) -> Self {
+        &self + &other
+    }
+}
 
 impl<CoeffType> Sub for &Polynomial<CoeffType>
 where
-    CoeffType: Sub<Output = CoeffType> + Copy + From<u32> + PartialEq,
+    CoeffType: Sub<Output = CoeffType> + Zero + PartialEq,
+    for<'a> &'a CoeffType: Sub<Output = CoeffType>,
 {
     type Output = Polynomial<CoeffType>;
 
@@ -56,33 +70,57 @@ where
 
         let coefficients = longer
             .iter()
-            .zip(shorter.iter().chain(iter::repeat(&CoeffType::from(0))))
-            .map(|(&left, &right)| left - right)
+            .zip(shorter.iter().chain(iter::repeat(&CoeffType::zero())))
+            .map(|(left, right)| left - right)
             .collect::<Vec<CoeffType>>();
         let mut diff = Polynomial { coefficients };
         diff.reduce();
         diff
     }
 }
+impl<CoeffType> Sub for Polynomial<CoeffType>
+where
+    CoeffType: Sub<Output = CoeffType> + Zero + PartialEq,
+    for<'a> &'a CoeffType: Sub<Output = CoeffType>,
+{
+    type Output = Polynomial<CoeffType>;
+    fn sub(self, other: Self) -> Self {
+        &self - &other
+    }
+}
 
 impl<CoeffType> Mul<CoeffType> for &Polynomial<CoeffType>
 where
-    CoeffType: Mul<Output = CoeffType> + Copy + From<u32> + PartialEq,
+    CoeffType: Mul<Output = CoeffType> + Zero + PartialEq,
+    for<'a> &'a CoeffType: Mul<Output = CoeffType>,
 {
     type Output = Polynomial<CoeffType>;
 
     fn mul(self, other: CoeffType) -> Polynomial<CoeffType> {
         let mut prod = Polynomial {
-            coefficients: self.coefficients.iter().map(|&c| c * other).collect(),
+            coefficients: self.coefficients.iter().map(|c| c * &other).collect(),
         };
         prod.reduce();
         prod
     }
 }
+impl<CoeffType> Mul<&CoeffType> for &Polynomial<CoeffType>
+where
+    CoeffType: Mul<Output = CoeffType> + Zero + PartialEq + Clone,
+    for<'a> &'a CoeffType: Mul<Output = CoeffType>,
+{
+    type Output = Polynomial<CoeffType>;
+
+    fn mul(self, other: &CoeffType) -> Polynomial<CoeffType> {
+        self * other.clone()
+    }
+}
 
 impl<CoeffType> Mul for &Polynomial<CoeffType>
 where
-    CoeffType: Mul<Output = CoeffType> + Add<Output = CoeffType> + Copy + From<u32> + PartialEq,
+    CoeffType:
+        Mul<Output = CoeffType> + Add<Output = CoeffType> + Clone + Zero + PartialEq,
+    for<'a> &'a CoeffType: Mul<Output = CoeffType> + Add<Output = CoeffType>,
 {
     type Output = Polynomial<CoeffType>;
 
@@ -97,8 +135,8 @@ where
             .coefficients
             .iter()
             .enumerate()
-            .map(|(power, &coeff)| {
-                let mut coefficients = vec![CoeffType::from(0); power];
+            .map(|(power, coeff)| {
+                let mut coefficients = vec![CoeffType::zero(); power];
                 coefficients.extend((self * coeff).coefficients);
                 Polynomial::<CoeffType> { coefficients }
             })
@@ -106,6 +144,17 @@ where
             .unwrap();
         prod.reduce();
         prod
+    }
+}
+impl<CoeffType> Mul for Polynomial<CoeffType>
+where
+    CoeffType:
+        Mul<Output = CoeffType> + Add<Output = CoeffType> + Clone + Zero + PartialEq,
+    for<'a> &'a CoeffType: Add<Output = CoeffType> + Mul<Output = CoeffType>,
+{
+    type Output = Polynomial<CoeffType>;
+    fn mul(self, other: Self) -> Self {
+        &self * &other
     }
 }
 
@@ -117,13 +166,37 @@ where
         + Sub<Output = CoeffType>
         + Mul<Output = CoeffType>
         + Div<Output = CoeffType>
-        + From<u32>
-        + Copy,
+        + Clone
+        + Zero,
+    for<'a> &'a CoeffType: Add<Output = CoeffType>
+        + Sub<Output = CoeffType>
+        + Mul<Output = CoeffType>
+        + Div<Output = CoeffType>,
 {
     type Output = Polynomial<CoeffType>;
 
     fn div(self, other: &Polynomial<CoeffType>) -> Polynomial<CoeffType> {
         self.full_divide(other).0
+    }
+}
+impl<CoeffType> Div for Polynomial<CoeffType>
+where
+    CoeffType: std::fmt::Debug
+        + PartialEq
+        + Add<Output = CoeffType>
+        + Sub<Output = CoeffType>
+        + Mul<Output = CoeffType>
+        + Div<Output = CoeffType>
+        + Clone
+        + Zero,
+    for<'a> &'a CoeffType: Div<Output = CoeffType>
+        + Add<Output = CoeffType>
+        + Sub<Output = CoeffType>
+        + Mul<Output = CoeffType>,
+{
+    type Output = Polynomial<CoeffType>;
+    fn div(self, other: Self) -> Self {
+        &self / &other
     }
 }
 
@@ -135,8 +208,12 @@ where
         + Sub<Output = CoeffType>
         + Mul<Output = CoeffType>
         + Div<Output = CoeffType>
-        + From<u32>
-        + Copy,
+        + Clone
+        + Zero,
+    for<'a> &'a CoeffType: Add<Output = CoeffType>
+        + Sub<Output = CoeffType>
+        + Mul<Output = CoeffType>
+        + Div<Output = CoeffType>,
 {
     type Output = Polynomial<CoeffType>;
 
@@ -144,23 +221,79 @@ where
         self.full_divide(other).1
     }
 }
-
-impl<CoeffType> Polynomial<CoeffType>
+impl<CoeffType> Rem for Polynomial<CoeffType>
 where
-    CoeffType: From<u32> + PartialEq,
+    CoeffType: std::fmt::Debug
+        + PartialEq
+        + Add<Output = CoeffType>
+        + Sub<Output = CoeffType>
+        + Mul<Output = CoeffType>
+        + Div<Output = CoeffType>
+        + Clone
+        + Zero,
+    for<'a> &'a CoeffType: Rem<Output = CoeffType>
+        + Add<Output = CoeffType>
+        + Sub<Output = CoeffType>
+        + Mul<Output = CoeffType>
+        + Div<Output = CoeffType>,
 {
-    pub fn reduce(&mut self) {
-        while self.coefficients.last() == Some(&CoeffType::from(0)) {
-            self.coefficients.pop();
+    type Output = Polynomial<CoeffType>;
+    fn rem(self, other: Self) -> Self {
+        &self % &other
+    }
+}
+
+impl<CoeffType> Zero for Polynomial<CoeffType>
+where
+    CoeffType: Add<Output = CoeffType> + Zero + PartialEq,
+    for<'a> &'a CoeffType: Add<Output = CoeffType>,
+{
+    fn zero() -> Self {
+        Self {
+            coefficients: vec![],
         }
     }
+    fn is_zero(&self) -> bool {
+        self.coefficients.iter().all(|c| c.is_zero())
+    }
+    fn set_zero(&mut self) {
+        self.coefficients.clear();
+    }
+}
 
+impl<CoeffType> Polynomial<CoeffType> {
     pub fn degree(&self) -> usize {
         self.coefficients.len()
     }
+}
 
-    pub fn is_zero(&self) -> bool {
-        self.coefficients.iter().all(|c| c == &CoeffType::from(0))
+impl<CoeffType> One for Polynomial<CoeffType>
+where CoeffType: Mul<Output = CoeffType> + One + Zero + Clone + PartialEq,
+for<'a> &'a CoeffType: Add<Output = CoeffType> + Mul<Output = CoeffType>,
+{
+    fn one() -> Self {
+        Self {
+            coefficients: vec![CoeffType::one()]
+        }
+    }
+
+    fn is_one(&self) -> bool {
+        self.coefficients == vec![CoeffType::one()]
+    }
+
+    fn set_one(&mut self) {
+        self.coefficients = vec![CoeffType::one()];
+    }
+}
+
+impl<CoeffType> Polynomial<CoeffType>
+where
+    CoeffType: Zero,
+{
+    pub fn reduce(&mut self) {
+        while self.coefficients.last().and_then(|c| Some(c.is_zero())) == Some(true) {
+            self.coefficients.pop();
+        }
     }
 }
 
@@ -172,8 +305,12 @@ where
         + Sub<Output = CoeffType>
         + Mul<Output = CoeffType>
         + Div<Output = CoeffType>
-        + From<u32>
-        + Copy,
+        + Clone
+        + Zero,
+    for<'a> &'a CoeffType: Add<Output = CoeffType>
+        + Sub<Output = CoeffType>
+        + Mul<Output = CoeffType>
+        + Div<Output = CoeffType>,
 {
     pub fn full_divide(
         &self,
@@ -202,13 +339,13 @@ where
 
         while remainder.degree() >= degree {
             let power = remainder.degree() - degree;
-            let mut coefficients = vec![CoeffType::from(0); power];
+            let mut coefficients = vec![CoeffType::zero(); power];
             let rem_lead_coeff = remainder.coefficients.last().unwrap();
-            coefficients.push(*rem_lead_coeff / *lead_coeff);
+            coefficients.push(rem_lead_coeff / lead_coeff);
             let term = Polynomial::<CoeffType> { coefficients };
 
-            quotient = &quotient + &term;
-            remainder = &remainder - &(&term * other);
+            quotient = quotient + term.clone();
+            remainder = remainder - (&term * other);
         }
 
         (quotient, remainder)
@@ -221,10 +358,35 @@ impl<CoeffType> From<Vec<CoeffType>> for Polynomial<CoeffType> {
     }
 }
 
+impl From<u8> for Polynomial<IntMod<2>> {
+    fn from(mut number: u8) -> Self {
+        let mut coefficients = vec![];
+
+        while number != 0 {
+            coefficients.push(IntMod::<2>::from((number % 2) as u32));
+            number /= 2;
+        }
+        Self { coefficients }
+    }
+}
+
+impl From<Polynomial<IntMod<2>>> for u8 {
+    fn from(poly: Polynomial<IntMod<2>>) -> u8 {
+        let mut number = 0u8;
+        for bit in poly.coefficients.iter().rev() {
+            number *= 2;
+            if bit.value == 1 {
+                number += 1;
+            }
+        }
+        number
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::int_mod::IntMod;
     use super::*;
+    use crate::int_mod::IntMod;
 
     #[test]
     fn addition_when_coeffs_are_integer() {
@@ -347,12 +509,15 @@ mod tests {
 
     #[test]
     fn modulus_within_modulus_929_reed_solomon_example() {
-        type IM929 = IntMod::<929>;
+        type IM929 = IntMod<929>;
 
         // Test that (3x^6 + 2x^5 + x^4) % (x - 3)(x - 3^2)(x - 3^3)(x - 3^4) =
         //      547x^3 + 738x^2 + 442x + 455
         let lhs = Polynomial::<IM929> {
-            coefficients: [0, 0, 0, 0 , 1, 2, 3].iter().map(|&c| IM929::from(c)).collect()
+            coefficients: [0, 0, 0, 0, 1, 2, 3]
+                .iter()
+                .map(|&c| IM929::from(c))
+                .collect(),
         };
         let zero = IM929::from(0);
         let one = IM929::from(1);
@@ -362,12 +527,41 @@ mod tests {
             vec![zero - (three * three), one],
             vec![zero - (three * three * three), one],
             vec![zero - (three * three * three * three), one],
-        ].iter().map(|coefficients| Polynomial::<IM929> { coefficients: coefficients.clone() }).reduce(|acc, poly| &acc * &poly).unwrap();
+        ]
+        .iter()
+        .map(|coefficients| Polynomial::<IM929> {
+            coefficients: coefficients.clone(),
+        })
+        .reduce(|acc, poly| &acc * &poly)
+        .unwrap();
 
         let result = Polynomial::<IM929> {
-            coefficients: [455, 442, 738, 547].iter().map(|&c| IM929::from(c)).collect()
+            coefficients: [455, 442, 738, 547]
+                .iter()
+                .map(|&c| IM929::from(c))
+                .collect(),
         };
 
         assert_eq!(&lhs % &rhs, result);
+    }
+
+    #[test]
+    fn convert_byte_to_8_bit_polynomial() {
+        // 173 = 10101101
+        let test = Polynomial::<IntMod<2>>::from(173u8);
+        let zero = IntMod::<2>::from(0);
+        let one = IntMod::<2>::from(1);
+        let expected =
+            Polynomial::<IntMod<2>>::from(vec![one, zero, one, one, zero, one, zero, one]);
+        assert_eq!(test, expected);
+    }
+
+    #[test]
+    fn convert_8_bit_polynomial_to_byte() {
+        // 173 = 10101101
+        let zero = IntMod::<2>::from(0);
+        let one = IntMod::<2>::from(1);
+        let test = Polynomial::<IntMod<2>>::from(vec![one, zero, one, one, zero, one, zero, one]);
+        assert_eq!(u8::from(test), 173);
     }
 }
