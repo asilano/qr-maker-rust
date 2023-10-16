@@ -35,34 +35,38 @@ where Polynomial: Sub + Clone + PartialEq,
   }
 }
 
-impl<Polynomial> Mul for &PolyModPoly<Polynomial>
-where Polynomial: Clone + PartialEq,
-  for<'a> &'a Polynomial: Mul<Output = Polynomial> + Rem<Output = Polynomial> {
-  type Output = PolyModPoly<Polynomial>;
+impl<Poly> Mul for &PolyModPoly<Poly>
+where Poly: Clone + PartialEq,
+  for<'a> &'a Poly: Mul<Output = Poly> + Rem<Output = Poly> {
+  type Output = PolyModPoly<Poly>;
 
-  fn mul(self, other: &PolyModPoly<Polynomial>) -> PolyModPoly<Polynomial> {
-    PolyModPoly::<Polynomial> {
+  fn mul(self, other: &PolyModPoly<Poly>) -> PolyModPoly<Poly> {
+    PolyModPoly::<Poly> {
       poly: &(&self.poly * &other.poly) % &self.prime,
       prime: self.prime.clone()
     }
   }
 }
 
-pub struct GaloisField<Polynomial>
-where Polynomial: PartialEq + Clone
+pub struct GaloisField<Poly>
+where Poly: PartialEq + Clone
 {
-  pub primitive: Polynomial,
-  pub prime: Polynomial
+  pub primitive: Poly,
+  pub prime: Poly
 }
-impl<Polynomial> GaloisField<Polynomial>
-where Polynomial: Clone + PartialEq,
-  for<'a> &'a Polynomial: Rem<Output = Polynomial>
+impl<Poly> GaloisField<Poly>
+where Poly: Clone + PartialEq,
+  for<'a> &'a Poly: Rem<Output = Poly>
 {
-  pub fn make_polynomial(&self, poly: Polynomial) -> PolyModPoly<Polynomial> {
+  pub fn make_polynomial(&self, poly: Poly) -> PolyModPoly<Poly> {
     PolyModPoly {
       poly: &poly % &self.prime,
       prime: self.prime.clone()
     }
+  }
+
+  pub fn reduce_poly_of_poly(&self, poly: Polynomial<Poly>) -> Polynomial<Poly> {
+    Polynomial::from(poly.coefficients.into_iter().map(|coeff_poly| self.make_polynomial(coeff_poly).poly).collect::<Vec<Poly>>())
   }
 }
 
