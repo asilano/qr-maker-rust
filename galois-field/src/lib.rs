@@ -22,6 +22,19 @@ where Polynomial: Add + Clone + PartialEq,
   }
 }
 
+impl<Polynomial> Sub for &PolyModPoly<Polynomial>
+where Polynomial: Sub + Clone + PartialEq,
+  for<'a> &'a Polynomial: Sub<Output = Polynomial> {
+  type Output = PolyModPoly<Polynomial>;
+
+  fn sub(self, other: &PolyModPoly<Polynomial>) -> PolyModPoly<Polynomial> {
+    PolyModPoly::<Polynomial> {
+      poly: &self.poly - &other.poly,
+      prime: self.prime.clone()
+    }
+  }
+}
+
 impl<Polynomial> Mul for &PolyModPoly<Polynomial>
 where Polynomial: Clone + PartialEq,
   for<'a> &'a Polynomial: Mul<Output = Polynomial> + Rem<Output = Polynomial> {

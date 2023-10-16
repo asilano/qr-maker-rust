@@ -36,17 +36,20 @@ for<'b> &'b CoeffType: Add<Output = CoeffType>
         let message_poly = Polynomial::from(message.into_iter().rev().collect::<Vec<Polynomial<CoeffType>>>());
 
         // Generate the, uh, generator polynomial, Product_n={0, ec_count-1}((x - Primitive^n))
-        let mut primitive_power = Polynomial::<CoeffType>::one();
-        let mut negative_prim_pow = &Polynomial::<CoeffType>::zero() - &primitive_power;
+        let mut primitive_power = self.galois_field.make_polynomial(Polynomial::<CoeffType>::one());
+        let gf_zero = self.galois_field.make_polynomial(Polynomial::<CoeffType>::zero());
+        let mut negative_prim_pow = &gf_zero - &primitive_power;
         let one = Polynomial::<CoeffType>::one();
-        let mut generator = Polynomial::from(vec![negative_prim_pow, one.clone()]);
-        for _ in 0..ec_count {
-            primitive_power = self.galois_field.make_polynomial(&primitive_power * &self.galois_field.primitive).poly;
-            negative_prim_pow = &Polynomial::<CoeffType>::zero() - &primitive_power;
-            generator = generator * Polynomial::from(vec![negative_prim_pow, one.clone()]);
+        let mut generator = Polynomial::from(vec![negative_prim_pow.poly, one.clone()]);
+        for _ in 1..ec_count {
+            primitive_power = self.galois_field.make_polynomial(&primitive_power.poly * &self.galois_field.primitive);
+            negative_prim_pow = &gf_zero - &primitive_power;
+            generator = generator * Polynomial::from(vec![negative_prim_pow.poly, one.clone()]);
+            generator = Polynomial::from(generator.coefficients.into_iter().map(|poly| self.galois_field.make_polynomial(poly).poly).collect::<Vec<Polynomial<CoeffType>>>());
         }
 
         let remainder = &message_poly % &generator;
+        let remainder = Polynomial::from(remainder.coefficients.into_iter().map(|poly| self.galois_field.make_polynomial(poly).poly).collect::<Vec<Polynomial<CoeffType>>>());
 
         (&message_poly - &remainder).coefficients.into_iter().rev().collect()
     }
