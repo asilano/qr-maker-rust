@@ -350,6 +350,19 @@ where
 
         (quotient, remainder)
     }
+
+    pub fn evaluate(&self, variable: &CoeffType) -> CoeffType
+    where CoeffType: One
+    {
+        let mut result = CoeffType::zero();
+        let mut var_power = CoeffType::one();
+
+        for coeff in &self.coefficients {
+            result = result + coeff * &var_power;
+            var_power = &var_power * variable;
+        }
+        result
+    }
 }
 
 impl<CoeffType> From<Vec<CoeffType>> for Polynomial<CoeffType> {

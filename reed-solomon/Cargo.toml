@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 galois-field = { version = "0.1.0", path = "../galois-field" }
 polynomial-arithmetic = { version = "0.1.0", path = "../polynomial-arithmetic" }
+
+[dev-dependencies]
+rand = "0.8.5"

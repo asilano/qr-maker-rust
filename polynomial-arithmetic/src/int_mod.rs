@@ -1,4 +1,4 @@
-pub use num::traits::{Zero, One};
+pub use num::traits::{Zero, One, Inv};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct IntMod<const MODULUS: u32> {
@@ -131,7 +131,7 @@ use std::ops::Div;
 impl<const MODULUS: u32> Div for IntMod<MODULUS> {
     type Output = IntMod<MODULUS>;
     fn div(self, other: IntMod<MODULUS>) -> Self::Output {
-        self * other.inverse()
+        self * other.inv()
     }
 }
 impl<const MODULUS: u32> Div<IntMod<MODULUS>> for &IntMod<MODULUS> {
@@ -185,8 +185,10 @@ impl<const MODULUS: u32> From<IntMod<MODULUS>> for u32 {
     }
 }
 
-impl<const MODULUS: u32> IntMod<MODULUS> {
-    fn inverse(self) -> Self {
+impl<const MODULUS: u32> Inv for IntMod<MODULUS> {
+    type Output = Self;
+
+    fn inv(self) -> Self {
         // Calculate by extended Euclidean algorithm
         // (per https://en.wikipedia.org/wiki/Extended_Euclidean_algorithm#Modular_integers)
         let mut inverse = 0i32;
@@ -268,10 +270,10 @@ mod tests {
     #[test]
     fn test_inverse() {
         let int_mod = IntMod::<5>::from(4);
-        assert_eq!(int_mod.inverse(), IntMod::<5>::from(4));
+        assert_eq!(int_mod.inv(), IntMod::<5>::from(4));
         let int_mod = IntMod::<7>::from(4);
-        assert_eq!(int_mod.inverse(), IntMod::<7>::from(2));
+        assert_eq!(int_mod.inv(), IntMod::<7>::from(2));
         let int_mod = IntMod::<7>::from(3);
-        assert_eq!(int_mod.inverse(), IntMod::<7>::from(5));
+        assert_eq!(int_mod.inv(), IntMod::<7>::from(5));
     }
 }
