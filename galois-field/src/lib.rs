@@ -1,84 +1,91 @@
-use std::ops::{Add, Sub, Mul, Div, Rem};
-use num::traits::{Zero, One};
+use std::{ops::{Add, Sub, Mul, Div, Rem}, fmt::Debug};
+use num::traits::{Zero, One, Inv};
 
 use polynomial_arithmetic::Polynomial;
 
-#[derive(Debug, PartialEq)]
-pub struct PolyModPoly<Polynomial: PartialEq>
+#[derive(Debug, PartialEq, Clone)]
+pub struct PolyWithinGF<'gf, Polynomial: PartialEq + Clone + Debug>
 {
   pub poly: Polynomial,
-  prime: Polynomial
+  gf: &'gf GaloisField<Polynomial>
 }
 
-impl<Polynomial> Add for &PolyModPoly<Polynomial>
-where Polynomial: Add + Clone + PartialEq,
+impl<'gf, Polynomial> Add for &PolyWithinGF<'gf, Polynomial>
+where Polynomial: Add + Clone + PartialEq + Debug,
   for<'a> &'a Polynomial: Add<Output = Polynomial> {
-  type Output = PolyModPoly<Polynomial>;
+  type Output = PolyWithinGF<'gf, Polynomial>;
 
-  fn add(self, other: &PolyModPoly<Polynomial>) -> PolyModPoly<Polynomial> {
-    PolyModPoly::<Polynomial> {
+  fn add(self, other: &PolyWithinGF<'gf, Polynomial>) -> PolyWithinGF<'gf, Polynomial> {
+    PolyWithinGF::<Polynomial> {
       poly: &self.poly + &other.poly,
-      prime: self.prime.clone()
+      gf: self.gf
     }
   }
 }
 
-impl<Polynomial> Sub for &PolyModPoly<Polynomial>
-where Polynomial: Sub + Clone + PartialEq,
+impl<'gf, Polynomial> Sub for &PolyWithinGF<'gf, Polynomial>
+where Polynomial: Sub + Clone + PartialEq + Debug,
   for<'a> &'a Polynomial: Sub<Output = Polynomial> {
-  type Output = PolyModPoly<Polynomial>;
+  type Output = PolyWithinGF<'gf, Polynomial>;
 
-  fn sub(self, other: &PolyModPoly<Polynomial>) -> PolyModPoly<Polynomial> {
-    PolyModPoly::<Polynomial> {
+  fn sub(self, other: &PolyWithinGF<'gf, Polynomial>) -> PolyWithinGF<'gf, Polynomial> {
+    PolyWithinGF::<'gf, Polynomial> {
       poly: &self.poly - &other.poly,
-      prime: self.prime.clone()
+      gf: self.gf
     }
   }
 }
 
-impl<Poly> Mul for &PolyModPoly<Poly>
-where Poly: Clone + PartialEq,
-  for<'a> &'a Poly: Mul<Output = Poly> + Rem<Output = Poly> {
-  type Output = PolyModPoly<Poly>;
+impl<'gf, Polynomial> Mul for &PolyWithinGF<'gf, Polynomial>
+where Polynomial: Clone + PartialEq + Debug + Zero,
+  for<'a> &'a Polynomial: Mul<Output = Polynomial> + Rem<Output = Polynomial> {
+  type Output = PolyWithinGF<'gf, Polynomial>;
 
-  fn mul(self, other: &PolyModPoly<Poly>) -> PolyModPoly<Poly> {
-    PolyModPoly::<Poly> {
-      poly: &(&self.poly * &other.poly) % &self.prime,
-      prime: self.prime.clone()
+  fn mul(self, other: &PolyWithinGF<'gf, Polynomial>) -> PolyWithinGF<'gf, Polynomial> {
+    PolyWithinGF::<'gf, Polynomial> {
+      poly: &(&self.poly * &other.poly) % &self.gf.prime,
+      gf: self.gf
     }
   }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct GaloisField<Poly>
-where Poly: PartialEq + Clone
+where Poly: PartialEq + Clone + Debug
 {
   pub primitive: Poly,
   pub prime: Poly
 }
 impl<Poly> GaloisField<Poly>
-where Poly: Clone + PartialEq,
+where Poly: Clone + PartialEq + Debug,
   for<'a> &'a Poly: Rem<Output = Poly>
 {
-  pub fn make_polynomial(&self, poly: Poly) -> PolyModPoly<Poly> {
-    PolyModPoly {
+  pub fn make_polynomial(&self, poly: Poly) -> PolyWithinGF<Poly> {
+    PolyWithinGF {
       poly: &poly % &self.prime,
-      prime: self.prime.clone()
+      gf: self
     }
   }
 
   pub fn reduce_poly_of_poly(&self, poly: Polynomial<Poly>) -> Polynomial<Poly> {
     Polynomial::from(poly.coefficients.into_iter().map(|coeff_poly| self.make_polynomial(coeff_poly).poly).collect::<Vec<Poly>>())
   }
+
+  pub fn gf_primitive(&self) -> PolyWithinGF<Poly> {
+    PolyWithinGF { poly: self.primitive.clone(), gf: self }
+  }
 }
-impl<Poly> GaloisField<Poly>
-where Poly: Zero + One + Sub<Output = Poly> + Clone + PartialEq,
-  for<'a> &'a Poly: Mul<Output = Poly> + Div<Output = Poly> + Rem<Output = Poly>
+
+impl<'gf, Poly> Inv for PolyWithinGF<'gf, Poly>
+where Poly: PartialEq + Zero + One + Sub<Output = Poly> + Clone + Debug,
+for <'a> &'a Poly: Sub<Output = Poly> + Mul<Output = Poly> + Div<Output = Poly> + Rem<Output = Poly>
 {
-  pub fn invert(&self, poly: Poly) -> Poly {
+  type Output = PolyWithinGF<'gf, Poly>;
+  fn inv(self) -> PolyWithinGF<'gf, Poly> {
     let mut t_now = Poly::zero();
     let mut t_next = Poly::one();
-    let mut r_now = self.prime.clone();
-    let mut r_next = poly;
+    let mut r_now = self.gf.prime.clone();
+    let mut r_next = self.poly;
 
     while !r_next.is_zero() {
       let quotient = &r_now / &r_next;
@@ -86,43 +93,43 @@ where Poly: Zero + One + Sub<Output = Poly> + Clone + PartialEq,
       (t_next, t_now) = (t_now - &quotient * &t_next, t_next);
     }
 
-    t_now
+    self.gf.make_polynomial(t_now)
   }
 }
 
 pub struct GaloisEnumerator<'gf, Poly>
-where Poly: PartialEq + Clone + One,
+where Poly: PartialEq + Clone + One + Debug,
   for<'a> &'a Poly: Mul<Output = Poly> + Rem<Output = Poly>
 {
   gf: &'gf GaloisField<Poly>,
-  current: Poly,
+  current: PolyWithinGF<'gf, Poly>,
   finished: bool
 }
 impl<'gf, Poly> GaloisEnumerator<'gf, Poly>
-where Poly: PartialEq + Clone + One,
+where Poly: PartialEq + Clone + One + Debug,
   for<'a> &'a Poly: Mul<Output = Poly> + Rem<Output = Poly>
 {
   pub fn new(gf: &'gf GaloisField<Poly>) -> Self {
     Self {
       gf,
-      current: Poly::one(),
+      current: gf.make_polynomial(Poly::one()),
       finished: false
     }
   }
 }
 impl<'gf, Poly> Iterator for GaloisEnumerator<'gf, Poly>
-where Poly: PartialEq + Clone + One,
+where Poly: PartialEq + Clone + One + Debug,
   for<'a> &'a Poly: Mul<Output = Poly> + Rem<Output = Poly>
 {
-  type Item = Poly;
+  type Item = PolyWithinGF<'gf, Poly>;
 
   fn next(&mut self) -> Option<Self::Item> {
     if self.finished {
       None
     } else {
       let ret = self.current.clone();
-      self.current = self.gf.make_polynomial(&self.current * &self.gf.primitive).poly;
-      self.finished = self.current == Poly::one();
+      self.current = &self.current * &self.gf.make_polynomial(self.gf.primitive.clone());
+      self.finished = self.current == self.gf.make_polynomial(Poly::one());
 
       Some(ret)
     }
@@ -130,7 +137,7 @@ where Poly: PartialEq + Clone + One,
 }
 
 impl<Poly> GaloisField<Poly>
-where Poly: PartialEq + Clone + One,
+where Poly: PartialEq + Clone + One + Debug,
   for<'a> &'a Poly: Mul<Output = Poly> + Rem<Output = Poly>
 {
   pub fn all_elements<'gf>(&'gf self) -> GaloisEnumerator<'gf, Poly> {
@@ -157,18 +164,18 @@ mod tests {
   fn test_addition_in_GF9() {
     // Test that (x + 2) + (x + 1) = 2x
     type Element = Polynomial<IntMod<3>>;
-    let prime = Element::from([2, 2, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>());
-    let lhs = PolyModPoly::<Element> {
+    let gf9 = gf9();
+    let lhs = PolyWithinGF::<Element> {
       poly: Element::from([2, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>()),
-      prime: prime.clone()
+      gf: &gf9
     };
-    let rhs = PolyModPoly::<Element> {
+    let rhs = PolyWithinGF::<Element> {
       poly: Element::from([1, 1].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>()),
-      prime: prime.clone()
+      gf: &gf9
     };
-    let result = PolyModPoly::<Element> {
+    let result = PolyWithinGF::<Element> {
       poly: Element::from([0, 2].iter().map(|&c| IntMod::<3>::from(c)).collect::<Vec<IntMod<3>>>()),
-      prime: prime.clone()
+      gf: &gf9
     };
     assert_eq!(&lhs + &rhs, result);
   }
@@ -194,9 +201,9 @@ mod tests {
       prime,
       primitive
     };
-    let test = Element::from([1, 1, 0, 0, 1, 0, 1].iter().map(|&c| IntMod::<2>::from(c)).collect::<Vec<IntMod<2>>>());
-    let rhs = Element::from([0, 1, 0, 1, 0, 0, 1, 1].iter().map(|&c| IntMod::<2>::from(c)).collect::<Vec<IntMod<2>>>());
-    assert_eq!(gf256.invert(test), rhs);
+    let test = gf256.make_polynomial(Element::from([1, 1, 0, 0, 1, 0, 1].iter().map(|&c| IntMod::<2>::from(c)).collect::<Vec<IntMod<2>>>()));
+    let rhs = gf256.make_polynomial(Element::from([0, 1, 0, 1, 0, 0, 1, 1].iter().map(|&c| IntMod::<2>::from(c)).collect::<Vec<IntMod<2>>>()));
+    assert_eq!(test.inv(), rhs);
   }
 
   #[test]
@@ -208,6 +215,6 @@ mod tests {
   #[test]
   fn test_that_all_elements_starts_with_primitive() {
     let gf9 = gf9();
-    assert_eq!(gf9.all_elements().next().unwrap(), Polynomial::<IntMod<3>>::one());
+    assert_eq!(gf9.all_elements().next().unwrap(), gf9.make_polynomial(Polynomial::<IntMod<3>>::one()));
   }
 }
