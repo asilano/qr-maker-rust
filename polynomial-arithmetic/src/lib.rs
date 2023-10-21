@@ -120,7 +120,7 @@ impl<CoeffType> Mul for &Polynomial<CoeffType>
 where
     CoeffType:
         Mul<Output = CoeffType> + Add<Output = CoeffType> + Clone + Zero + PartialEq,
-    for<'a> &'a CoeffType: Mul<Output = CoeffType> + Add<Output = CoeffType>,
+    for<'a> &'a CoeffType: Mul<Output = CoeffType> + Add<Output = CoeffType> + Sub<Output = CoeffType>,
 {
     type Output = Polynomial<CoeffType>;
 
@@ -131,12 +131,18 @@ where
             };
         }
 
+        // Workaround for PolyWithinGF not being able to implement zero() properly
+        let first_coeff = self.coefficients.first().unwrap();
+
+        #[allow(clippy::eq_op)]
+        let coeff_zero = first_coeff - first_coeff;
+
         let mut prod = other
             .coefficients
             .iter()
             .enumerate()
             .map(|(power, coeff)| {
-                let mut coefficients = vec![CoeffType::zero(); power];
+                let mut coefficients = vec![coeff_zero.clone(); power];
                 coefficients.extend((self * coeff).coefficients);
                 Polynomial::<CoeffType> { coefficients }
             })
@@ -150,7 +156,7 @@ impl<CoeffType> Mul for Polynomial<CoeffType>
 where
     CoeffType:
         Mul<Output = CoeffType> + Add<Output = CoeffType> + Clone + Zero + PartialEq,
-    for<'a> &'a CoeffType: Add<Output = CoeffType> + Mul<Output = CoeffType>,
+    for<'a> &'a CoeffType: Add<Output = CoeffType> + Sub<Output = CoeffType> + Mul<Output = CoeffType>,
 {
     type Output = Polynomial<CoeffType>;
     fn mul(self, other: Self) -> Self {
@@ -269,7 +275,7 @@ impl<CoeffType> Polynomial<CoeffType> {
 
 impl<CoeffType> One for Polynomial<CoeffType>
 where CoeffType: Mul<Output = CoeffType> + One + Zero + Clone + PartialEq,
-for<'a> &'a CoeffType: Add<Output = CoeffType> + Mul<Output = CoeffType>,
+for<'a> &'a CoeffType: Add<Output = CoeffType> + Sub<Output = CoeffType> + Mul<Output = CoeffType>,
 {
     fn one() -> Self {
         Self {

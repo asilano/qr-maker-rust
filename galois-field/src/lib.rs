@@ -22,6 +22,16 @@ where Polynomial: Add + Clone + PartialEq + Debug,
     }
   }
 }
+impl<'gf, Polynomial> Add for PolyWithinGF<'gf, Polynomial>
+where Polynomial: Add + Clone + PartialEq + Debug,
+for<'a> &'a Polynomial: Add<Output = Polynomial>
+{
+  type Output = PolyWithinGF<'gf, Polynomial>;
+
+  fn add(self, other: Self) -> Self {
+    &self + &other
+  }
+}
 
 impl<'gf, Polynomial> Sub for &PolyWithinGF<'gf, Polynomial>
 where Polynomial: Sub + Clone + PartialEq + Debug,
@@ -35,10 +45,21 @@ where Polynomial: Sub + Clone + PartialEq + Debug,
     }
   }
 }
+impl<'gf, Polynomial> Sub for PolyWithinGF<'gf, Polynomial>
+where Polynomial: Sub + Clone + PartialEq + Debug,
+for<'a> &'a Polynomial: Sub<Output = Polynomial>
+{
+  type Output = PolyWithinGF<'gf, Polynomial>;
+
+  fn sub(self, other: Self) -> Self {
+    &self - &other
+  }
+}
 
 impl<'gf, Polynomial> Mul for &PolyWithinGF<'gf, Polynomial>
 where Polynomial: Clone + PartialEq + Debug + Zero,
-  for<'a> &'a Polynomial: Mul<Output = Polynomial> + Rem<Output = Polynomial> {
+for<'a> &'a Polynomial: Mul<Output = Polynomial> + Rem<Output = Polynomial>
+{
   type Output = PolyWithinGF<'gf, Polynomial>;
 
   fn mul(self, other: &PolyWithinGF<'gf, Polynomial>) -> PolyWithinGF<'gf, Polynomial> {
@@ -46,6 +67,54 @@ where Polynomial: Clone + PartialEq + Debug + Zero,
       poly: &(&self.poly * &other.poly) % &self.gf.prime,
       gf: self.gf
     }
+  }
+}
+impl<'gf, Polynomial> Mul for PolyWithinGF<'gf, Polynomial>
+where Polynomial: Clone + PartialEq + Debug + Zero,
+for<'a> &'a Polynomial: Mul<Output = Polynomial> + Rem<Output = Polynomial>
+{
+  type Output = PolyWithinGF<'gf, Polynomial>;
+
+  fn mul(self, rhs: Self) -> Self::Output {
+      &self * &rhs
+  }
+}
+
+impl<'gf, Polynomial> Div for &PolyWithinGF<'gf, Polynomial>
+where Polynomial: PartialEq + Zero + One + Sub<Output = Polynomial> + Clone + Debug,
+for<'a> &'a Polynomial: Sub<Output = Polynomial> + Mul<Output = Polynomial> + Div<Output = Polynomial> + Rem<Output = Polynomial>
+{
+  type Output = PolyWithinGF<'gf, Polynomial>;
+
+  fn div(self, other: &PolyWithinGF<'gf, Polynomial>) -> PolyWithinGF<'gf, Polynomial> {
+    self * &other.clone().inv()
+  }
+}
+impl<'gf, Polynomial> Div for PolyWithinGF<'gf, Polynomial>
+where Polynomial: PartialEq + Zero + One + Sub<Output = Polynomial> + Clone + Debug,
+for<'a> &'a Polynomial: Sub<Output = Polynomial> + Mul<Output = Polynomial> + Div<Output = Polynomial> + Rem<Output = Polynomial>
+{
+  type Output = PolyWithinGF<'gf, Polynomial>;
+
+  fn div(self, rhs: Self) -> Self::Output {
+      &self / &rhs
+  }
+}
+
+impl<'gf, Polynomial> Zero for PolyWithinGF<'gf, Polynomial>
+where Polynomial: Zero + PartialEq + Clone + Debug,
+for<'a> &'a Polynomial: Add<Output = Polynomial>
+{
+  fn zero() -> Self {
+    unimplemented!();
+  }
+
+  fn is_zero(&self) -> bool {
+      self.poly.is_zero()
+  }
+
+  fn set_zero(&mut self) {
+      self.poly.set_zero();
   }
 }
 
@@ -118,7 +187,7 @@ where Poly: PartialEq + Clone + One + Debug,
   }
 }
 impl<'gf, Poly> Iterator for GaloisEnumerator<'gf, Poly>
-where Poly: PartialEq + Clone + One + Debug,
+where Poly: PartialEq + Clone + One + Zero + Debug,
   for<'a> &'a Poly: Mul<Output = Poly> + Rem<Output = Poly>
 {
   type Item = PolyWithinGF<'gf, Poly>;
