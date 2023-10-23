@@ -1,7 +1,7 @@
 pub mod int_mod;
 use std::{
     iter,
-    ops::{Add, Div, Mul, Rem, Sub}, fmt::Debug, any::Any,
+    ops::{Add, Div, Mul, Rem, Sub}, fmt::Debug
 };
 
 pub use int_mod::{IntMod, Zero, One};
@@ -377,26 +377,24 @@ impl<CoeffType> From<Vec<CoeffType>> for Polynomial<CoeffType> {
     }
 }
 
-impl From<u8> for Polynomial<IntMod<2>> {
-    fn from(mut number: u8) -> Self {
+impl<const MODULUS: u32> From<u32> for Polynomial<IntMod<MODULUS>> {
+    fn from(mut number: u32) -> Self {
         let mut coefficients = vec![];
 
         while number != 0 {
-            coefficients.push(IntMod::<2>::from((number % 2) as u32));
-            number /= 2;
+            coefficients.push(IntMod::<MODULUS>::from((number % MODULUS) as u32));
+            number /= MODULUS;
         }
         Self { coefficients }
     }
 }
 
-impl From<Polynomial<IntMod<2>>> for u8 {
-    fn from(poly: Polynomial<IntMod<2>>) -> u8 {
-        let mut number = 0u8;
-        for bit in poly.coefficients.iter().rev() {
-            number *= 2;
-            if bit.value == 1 {
-                number += 1;
-            }
+impl<const MODULUS: u32> From<Polynomial<IntMod<MODULUS>>> for u32 {
+    fn from(poly: Polynomial<IntMod<MODULUS>>) -> u32 {
+        let mut number = 0u32;
+        for digit in poly.coefficients.iter().rev() {
+            number *= MODULUS;
+            number += digit.value;
         }
         number
     }
@@ -567,7 +565,7 @@ mod tests {
     #[test]
     fn convert_byte_to_8_bit_polynomial() {
         // 173 = 10101101
-        let test = Polynomial::<IntMod<2>>::from(173u8);
+        let test = Polynomial::<IntMod<2>>::from(173u32);
         let zero = IntMod::<2>::from(0);
         let one = IntMod::<2>::from(1);
         let expected =
@@ -581,6 +579,6 @@ mod tests {
         let zero = IntMod::<2>::from(0);
         let one = IntMod::<2>::from(1);
         let test = Polynomial::<IntMod<2>>::from(vec![one, zero, one, one, zero, one, zero, one]);
-        assert_eq!(u8::from(test), 173);
+        assert_eq!(u32::from(test), 173);
     }
 }
