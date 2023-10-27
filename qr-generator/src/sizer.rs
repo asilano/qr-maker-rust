@@ -197,7 +197,7 @@ impl Sizer {
                 (40, CorrectionLevels::M) => 2334,
                 (40, CorrectionLevels::Q) => 1666,
                 (40, CorrectionLevels::H) => 1276,
-                _ => unreachable!()
+                _ => unreachable!(),
             },
         }
     }
@@ -382,7 +382,7 @@ impl Sizer {
                 // (40, CorrectionLevels::M) => 2334,
                 // (40, CorrectionLevels::Q) => 1666,
                 // (40, CorrectionLevels::H) => 1276,
-                _ => unreachable!()
+                _ => unreachable!(),
             },
         }
     }

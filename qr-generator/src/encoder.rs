@@ -334,14 +334,17 @@ impl<'a> Encoder<'a> {
         let padding_amount = total_codewords - self.output_data.len() / 8;
         let mut padding_codewords = bitvec![u8, Msb0;];
         for pad in 0..padding_amount {
-            if pad == padding_amount - 1 && self.generator.options.qr_type == Some(QRSymbolTypes::MicroQRCode) && (self.generator.options.version == Some(1) || self.generator.options.version == Some(3)) {
+            if pad == padding_amount - 1
+                && self.generator.options.qr_type == Some(QRSymbolTypes::MicroQRCode)
+                && (self.generator.options.version == Some(1)
+                    || self.generator.options.version == Some(3))
+            {
                 padding_codewords.append(&mut bitvec![u8, Msb0; 0, 0, 0, 0]);
-            }
-            else {
+            } else {
                 padding_codewords.append(&mut match pad % 2 {
                     0 => bitvec![u8, Msb0; 1, 1, 1, 0, 1, 1, 0, 0],
                     1 => bitvec![u8, Msb0; 0, 0, 0, 1, 0, 0, 0, 1],
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 });
             }
         }
