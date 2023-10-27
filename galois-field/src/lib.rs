@@ -1,42 +1,49 @@
 use std::{ops::{Add, Sub, Mul, Div}, fmt::Debug, marker::PhantomData};
-use num::traits::{Zero, One, Inv};
+use num::traits::Pow;
+pub use num::traits::{Zero, One, Inv};
 
 use polynomial_arithmetic::{Polynomial, IntMod};
 
 #[derive(Debug, PartialEq)]
 pub struct GaloisField<const PRIME: u32, const POWER: u32, const PRIME_POLY: u32, const ALPHA_POLY: u32> {
-  prime_poly: PolyWithinGF<Self>,
-  alpha_poly: PolyWithinGF<Self>
 }
 
-pub trait IsGaloisField: Sized
-where Self::UnderlyingPoly: PartialEq + Clone + Debug + Zero + One
-  + Add<Output = Self::UnderlyingPoly>
-  + Sub<Output = Self::UnderlyingPoly>
-  + Mul<Output = Self::UnderlyingPoly>
-  + Div<Output = Self::UnderlyingPoly>,
-for<'a> &'a Self::UnderlyingPoly:
-  Add<Output = Self::UnderlyingPoly>
-  + Sub<Output = Self::UnderlyingPoly>
-  + Mul<Output = Self::UnderlyingPoly>
-  + Div<Output = Self::UnderlyingPoly>
+pub trait IsGaloisField: Sized + Debug
+where
+  Self::CoeffType: std::fmt::Debug
+    + PartialEq
+    + Add<Output = Self::CoeffType>
+    + Sub<Output = Self::CoeffType>
+    + Mul<Output = Self::CoeffType>
+    + Div<Output = Self::CoeffType>
+    + Clone
+    + Zero
+    + One,
+  for<'a> &'a Self::CoeffType: Add<Output = Self::CoeffType>
+    + Sub<Output = Self::CoeffType>
+    + Mul<Output = Self::CoeffType>
+    + Div<Output = Self::CoeffType>,
 {
-  type UnderlyingPoly;
-  fn prime_poly() -> Self::UnderlyingPoly;
+  type CoeffType;
+  fn order() -> usize;
+  fn prime_poly() -> Polynomial<Self::CoeffType>;
   fn alpha_poly() -> PolyWithinGF<Self>;
-  fn make_polynomial(poly: Self::UnderlyingPoly) -> PolyWithinGF<Self>;
+  fn make_polynomial(poly: Polynomial<Self::CoeffType>) -> PolyWithinGF<Self>;
   fn all_elements() -> GaloisEnumerator<Self>;
 }
 impl<const PRIME: u32, const POWER: u32, const PRIME_POLY: u32, const ALPHA_POLY: u32> IsGaloisField for GaloisField<PRIME, POWER, PRIME_POLY, ALPHA_POLY> {
-  type UnderlyingPoly = Polynomial<IntMod<PRIME>>;
+  type CoeffType = IntMod<PRIME>;
 
+  fn order() -> usize {
+    PRIME.pow(POWER) as usize
+  }
   fn prime_poly() -> Polynomial<IntMod<PRIME>> {
     Polynomial::<IntMod<PRIME>>::from(PRIME_POLY)
   }
   fn alpha_poly() -> PolyWithinGF<Self> {
     Self::make_polynomial(Polynomial::<IntMod<PRIME>>::from(ALPHA_POLY))
   }
-  fn make_polynomial(poly: Self::UnderlyingPoly) -> PolyWithinGF<Self> {
+  fn make_polynomial(poly: Polynomial<Self::CoeffType>) -> PolyWithinGF<Self> {
       PolyWithinGF::<Self>::new(&poly % &Self::prime_poly())
   }
   fn all_elements() -> GaloisEnumerator<Self> {
@@ -53,34 +60,48 @@ impl<const PRIME: u32, const POWER: u32, const PRIME_POLY: u32, const ALPHA_POLY
 //   }
 // }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct PolyWithinGF<GF: IsGaloisField>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
-  pub poly: GF::UnderlyingPoly,
+  pub poly: Polynomial<GF::CoeffType>,
   _gf: PhantomData<GF>
 }
 impl<GF: IsGaloisField> PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
-  pub fn new(poly: GF::UnderlyingPoly) -> Self {
+  pub fn new(poly: Polynomial<GF::CoeffType>) -> Self {
     Self {
       poly,
       _gf: PhantomData
     }
   }
 }
+impl<GF: IsGaloisField> PartialEq for PolyWithinGF<GF>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
+{
+  fn eq(&self, other: &Self) -> bool {
+      self.poly == other.poly
+  }
+}
 impl<GF: IsGaloisField> Clone for PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   fn clone(&self) -> Self {
       Self {
@@ -90,10 +111,11 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
   }
 }
 impl<GF: IsGaloisField> Add for &PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Output = PolyWithinGF<GF>;
 
@@ -102,10 +124,11 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
   }
 }
 impl<GF: IsGaloisField> Add for PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Output = PolyWithinGF<GF>;
 
@@ -115,10 +138,11 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
 }
 
 impl<GF: IsGaloisField> Sub for &PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Output = PolyWithinGF<GF>;
 
@@ -127,10 +151,11 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
   }
 }
 impl<GF: IsGaloisField> Sub for PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Output = PolyWithinGF<GF>;
 
@@ -140,10 +165,11 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
 }
 
 impl<GF: IsGaloisField> Mul for &PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Output = PolyWithinGF<GF>;
 
@@ -152,10 +178,11 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
   }
 }
 impl<GF: IsGaloisField> Mul for PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Output = PolyWithinGF<GF>;
 
@@ -165,10 +192,11 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
 }
 
 impl<GF: IsGaloisField> Div for &PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Output = PolyWithinGF<GF>;
 
@@ -177,10 +205,11 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
   }
 }
 impl<GF: IsGaloisField> Div for PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Output = PolyWithinGF<GF>;
 
@@ -190,13 +219,14 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
 }
 
 impl<GF: IsGaloisField> Zero for PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   fn zero() -> Self {
-    GF::make_polynomial(GF::UnderlyingPoly::zero())
+    GF::make_polynomial(Polynomial::<GF::CoeffType>::zero())
   }
 
   fn is_zero(&self) -> bool {
@@ -209,13 +239,14 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
 }
 
 impl<GF: IsGaloisField> One for PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   fn one() -> Self {
-      GF::make_polynomial(GF::UnderlyingPoly::one())
+      GF::make_polynomial(Polynomial::<GF::CoeffType>::one())
   }
 
   fn is_one(&self) -> bool {
@@ -228,15 +259,16 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
 }
 
 impl<GF: IsGaloisField> Inv for PolyWithinGF<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Output = PolyWithinGF<GF>;
   fn inv(self) -> PolyWithinGF<GF> {
-    let mut t_now = GF::UnderlyingPoly::zero();
-    let mut t_next = GF::UnderlyingPoly::one();
+    let mut t_now = Polynomial::<GF::CoeffType>::zero();
+    let mut t_next = Polynomial::<GF::CoeffType>::one();
     let mut r_now = GF::prime_poly();
     let mut r_next = self.poly;
 
@@ -251,19 +283,21 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
 }
 
 pub struct GaloisEnumerator<GF: IsGaloisField>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   current: PolyWithinGF<GF>,
   finished: bool
 }
 impl<GF: IsGaloisField> GaloisEnumerator<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   pub fn new() -> Self {
     Self {
@@ -273,10 +307,11 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
   }
 }
 impl<GF: IsGaloisField> Iterator for GaloisEnumerator<GF>
-where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
-+ Sub<Output = GF::UnderlyingPoly>
-+ Mul<Output = GF::UnderlyingPoly>
-+ Div<Output = GF::UnderlyingPoly>
+where
+for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
++ Sub<Output = GF::CoeffType>
++ Mul<Output = GF::CoeffType>
++ Div<Output = GF::CoeffType>,
 {
   type Item = PolyWithinGF<GF>;
 
@@ -286,7 +321,7 @@ where for<'a> &'a GF::UnderlyingPoly: Add<Output = GF::UnderlyingPoly>
     } else {
       let ret = self.current.clone();
       self.current = &self.current * &GF::alpha_poly();
-      self.finished = self.current.poly == GF::UnderlyingPoly::one();
+      self.finished = self.current.poly == Polynomial::<GF::CoeffType>::one();
 
       Some(ret)
     }
@@ -299,7 +334,7 @@ mod tests {
   use super::*;
 
   type GF9 = GaloisField<3, 2, 17, 3>;
-  type GF256 = GaloisField<2, 8, 283, 2>;
+  type GF256 = GaloisField<2, 8, 283, 2>; // Note - not the QR Prime poly
 
   #[test]
   fn test_addition_in_GF9() {

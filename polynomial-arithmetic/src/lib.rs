@@ -297,7 +297,7 @@ where
     CoeffType: Zero,
 {
     pub fn reduce(&mut self) {
-        while self.coefficients.last().and_then(|c| Some(c.is_zero())) == Some(true) {
+        while self.coefficients.last().map(|c| c.is_zero()) == Some(true) {
             self.coefficients.pop();
         }
     }
@@ -318,6 +318,15 @@ where
         + Mul<Output = CoeffType>
         + Div<Output = CoeffType>,
 {
+    pub fn scalar_mul(&self, other: u32) -> Polynomial<CoeffType> {
+        let mut prod = Polynomial::<CoeffType>::zero();
+        for _ in 0..other {
+            prod = &prod + self;
+        }
+
+        prod
+    }
+
     pub fn full_divide(
         &self,
         other: &Polynomial<CoeffType>,
@@ -351,7 +360,8 @@ where
             let term = Polynomial::<CoeffType> { coefficients };
 
             quotient = quotient + term.clone();
-            remainder = remainder - (&term * other);
+            let term_by_other = &term * other;
+            remainder = remainder - term_by_other;
         }
 
         (quotient, remainder)
