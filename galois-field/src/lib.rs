@@ -1,5 +1,4 @@
 use std::{ops::{Add, Sub, Mul, Div}, fmt::Debug, marker::PhantomData};
-use num::traits::Pow;
 pub use num::traits::{Zero, One, Inv};
 
 use polynomial_arithmetic::{Polynomial, IntMod};

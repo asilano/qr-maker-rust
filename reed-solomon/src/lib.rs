@@ -1,6 +1,6 @@
-use galois_field::{GaloisField, PolyWithinGF, IsGaloisField};
+use galois_field::{PolyWithinGF, IsGaloisField};
 use polynomial_arithmetic::{Polynomial, Zero, One};
-use std::{ops::{Add, Sub, Mul, Div, Rem}, fmt::Debug, marker::PhantomData};
+use std::{ops::{Add, Sub, Mul, Div}, marker::PhantomData};
 use num::traits::Inv;
 
 struct ReedSolomonEncoder<GF: IsGaloisField>
@@ -58,7 +58,6 @@ for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
     }
 
     fn decode(&self, rcvd: Vec<Polynomial<GF::CoeffType>>, ec_count: usize) -> Vec<Polynomial<GF::CoeffType>> {
-        let degree = rcvd.len() - 1;
         let mut rcvd_poly = Polynomial::from(
             rcvd
             .clone()
@@ -75,7 +74,6 @@ for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
         let mut r_prev_coeffs = vec![gf_zero.clone(); ec_count];
         r_prev_coeffs.push(gf_one.clone());
         let mut r_prev = Polynomial::from(r_prev_coeffs);
-        let modulus = r_prev.clone();
 
         let mut s_coeffs = vec![];
         let mut alpha_pow = gf_one.clone();
@@ -97,13 +95,11 @@ for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
 
         while r_now.coefficients.len() > ec_count / 2 {
             let (quotient, r_next) = r_prev.clone().full_divide(&r_now);
-            let r_next_other = r_prev - &quotient * &r_now;
             (r_now, r_prev) = (r_next, r_now);
             (a_now, a_prev) = (a_prev - &quotient * &a_now, a_now);
         }
         let a_lead_inverse = a_now.coefficients.first().unwrap().clone().inv();
         let lambda: Polynomial<PolyWithinGF<GF>> = &a_now * &a_lead_inverse;
-        let other_omega: Polynomial<PolyWithinGF<GF>> = &r_now * &a_lead_inverse;
 
         let mut omega: Polynomial<PolyWithinGF<GF>> = &s * &lambda;
         omega.coefficients.truncate(ec_count);
