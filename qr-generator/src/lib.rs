@@ -85,7 +85,8 @@ impl QRGenerator {
             self.options.version.unwrap(),
             self.options.correction_level.as_ref().unwrap(),
         ));
-        error_corrector.fill_data_into_blocks(data_codewords);
+        error_corrector.fill_data_into_blocks(data_codewords)?;
+        error_corrector.generate_error_correction();
 
         // let err_correct_blocks: Vec<Vec<u8>> = generate_err_correction(&data_blocks);
         // let message_sequence: Vec<u8> = interleave_data_and_err_correct(data_blocks, err_correct_blocks);

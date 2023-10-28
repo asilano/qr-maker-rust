@@ -1,3 +1,5 @@
+use reed_solomon::{Polynomial, IntMod, ReedSolomonEncoder, GaloisField};
+
 use crate::qr_errors::EncodingError;
 
 #[derive(PartialEq, PartialOrd, Eq, Ord, Debug)]
@@ -56,7 +58,25 @@ impl ErrorCorrector {
                 .take(block.data_codeword_count)
                 .collect::<Vec<u8>>();
         });
-        println!("{:?}", self.blocks);
         Ok(())
+    }
+
+    pub fn generate_error_correction(&mut self) {
+        for ec_block in self.blocks.iter_mut() {
+            ec_block.generate_error_correction();
+        }
+        println!("{:?}", self.blocks);
+    }
+}
+
+impl ErrorCorrectionBlock {
+    pub fn generate_error_correction(&mut self) {
+        type Element = Polynomial<IntMod<2>>;
+        type GF256 = GaloisField<2, 8, 285, 2>;
+        let rs = ReedSolomonEncoder::<GF256>::new();
+
+        let block_polys = self.data_codewords.iter().map(|&cw| Element::from(cw as u32)).collect::<Vec<Element>>();
+        let encoded_polys: Vec<Element> = rs.encode(block_polys, self.error_correction_codeword_count);
+        self.ec_codewords = encoded_polys.into_iter().skip(self.data_codeword_count).map(|cw| u32::from(cw) as u8).collect();
     }
 }

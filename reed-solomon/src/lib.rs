@@ -1,9 +1,10 @@
 use galois_field::{PolyWithinGF, IsGaloisField};
-use polynomial_arithmetic::{Polynomial, Zero, One};
+pub use galois_field::GaloisField;
+pub use polynomial_arithmetic::{Polynomial, Zero, One, int_mod::IntMod};
 use std::{ops::{Add, Sub, Mul, Div}, marker::PhantomData};
 use num::traits::Inv;
 
-struct ReedSolomonEncoder<GF: IsGaloisField>
+pub struct ReedSolomonEncoder<GF: IsGaloisField>
 where
 for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
 + Sub<Output = GF::CoeffType>
