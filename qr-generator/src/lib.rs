@@ -3,7 +3,8 @@ mod error_correction;
 mod qr_errors;
 mod qr_types;
 mod sizer;
-use encoder::{Encoder, EncodingModes};
+use encoder::Encoder;
+pub use encoder::EncodingModes;
 use error_correction::CorrectionLevels;
 use image::{imageops, GrayImage, ImageBuffer, Luma};
 use qr_errors::QRError;
@@ -88,9 +89,9 @@ impl QRGenerator {
         error_corrector.fill_data_into_blocks(data_codewords)?;
         error_corrector.generate_error_correction();
 
-        // let err_correct_blocks: Vec<Vec<u8>> = generate_err_correction(&data_blocks);
-        // let message_sequence: Vec<u8> = interleave_data_and_err_correct(data_blocks, err_correct_blocks);
-        let message_sequence: Vec<u8> = vec![];
+        let message_sequence: Vec<u8> = error_corrector.interleave().collect();
+        println!("{:?}", message_sequence);
+
         let unmasked_image: GrayImage = self.build_qr_image(message_sequence);
         // let masked_image: GrayImage = mask_qr_image(unmasked_image);
         // generate_format_and_version_info(...);

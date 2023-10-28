@@ -67,6 +67,10 @@ impl ErrorCorrector {
         }
         println!("{:?}", self.blocks);
     }
+
+    pub fn interleave(&self) -> BlockInterleaver {
+        BlockInterleaver::new(self)
+    }
 }
 
 impl ErrorCorrectionBlock {
@@ -78,5 +82,76 @@ impl ErrorCorrectionBlock {
         let block_polys = self.data_codewords.iter().map(|&cw| Element::from(cw as u32)).collect::<Vec<Element>>();
         let encoded_polys: Vec<Element> = rs.encode(block_polys, self.error_correction_codeword_count);
         self.ec_codewords = encoded_polys.into_iter().skip(self.data_codeword_count).map(|cw| u32::from(cw) as u8).collect();
+    }
+}
+
+enum BlockType {
+    Data,
+    ErrorCorrection
+}
+pub struct BlockInterleaver<'a> {
+    corrected_blocks: &'a ErrorCorrector,
+    block_type: BlockType,
+    block_number: usize,
+    word_number: usize
+}
+impl<'a> BlockInterleaver<'a> {
+    pub fn new(corrected_blocks: &'a ErrorCorrector) -> Self {
+        Self {
+            corrected_blocks,
+            block_type: BlockType::Data,
+            block_number: 0,
+            word_number: 0
+        }
+    }
+}
+impl<'a> Iterator for BlockInterleaver<'a> {
+    type Item = u8;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.block_type {
+            BlockType::Data => {
+                if self.block_number < self.corrected_blocks.blocks.len() {
+                    if self.word_number < self.corrected_blocks.blocks[self.block_number].data_codewords.len() {
+                        let use_block = self.block_number;
+                        self.block_number += 1;
+                        Some(self.corrected_blocks.blocks[use_block].data_codewords[self.word_number])
+                    }
+                    else {
+                        self.block_number += 1;
+                        self.next()
+                    }
+                } else {
+                    self.block_number = 0;
+                    if self.word_number < self.corrected_blocks.blocks.last().unwrap().data_codewords.len() {
+                        self.word_number += 1;
+                    } else {
+                        self.word_number = 0;
+                        self.block_type = BlockType::ErrorCorrection;
+                    }
+                    self.next()
+                }
+            },
+            BlockType::ErrorCorrection => {
+                if self.block_number < self.corrected_blocks.blocks.len() {
+                    if self.word_number < self.corrected_blocks.blocks[self.block_number].ec_codewords.len() {
+                        let use_block = self.block_number;
+                        self.block_number += 1;
+                        Some(self.corrected_blocks.blocks[use_block].ec_codewords[self.word_number])
+                    }
+                    else {
+                        self.block_number += 1;
+                        self.next()
+                    }
+                } else {
+                    self.block_number = 0;
+                    if self.word_number < self.corrected_blocks.blocks.last().unwrap().ec_codewords.len() {
+                        self.word_number += 1;
+                        self.next()
+                    } else {
+                        None
+                    }
+                }
+            }
+        }
     }
 }
