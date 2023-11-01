@@ -3,6 +3,7 @@ mod error_correction;
 mod qr_errors;
 mod qr_types;
 mod sizer;
+mod image_builder;
 use encoder::Encoder;
 pub use encoder::EncodingModes;
 use error_correction::CorrectionLevels;
@@ -12,7 +13,7 @@ pub use qr_types::QRSymbolTypes;
 use qr_types::{FinderLocations, QRFactory};
 use sizer::Sizer;
 
-use crate::error_correction::ErrorCorrector;
+use crate::{error_correction::ErrorCorrector, image_builder::ImageBuilder};
 
 #[derive(Default)]
 pub struct Options {
@@ -92,30 +93,17 @@ impl QRGenerator {
         let message_sequence: Vec<u8> = error_corrector.interleave().collect();
         println!("{:?}", message_sequence);
 
-        let unmasked_image: GrayImage = self.build_qr_image(message_sequence);
+        let mut image_builder = ImageBuilder::new(self.options.qr_type.unwrap(), self.options.version.unwrap(), &message_sequence);
+        image_builder.build_qr_image();
+
+        // let unmasked_image: GrayImage = self.build_qr_image(message_sequence);
         // let masked_image: GrayImage = mask_qr_image(unmasked_image);
         // generate_format_and_version_info(...);
-        self.save_qr_image(&"./qr_code.png".to_string(), unmasked_image)?;
+        self.save_qr_image(&"./qr_code.png".to_string(), image_builder.get_image())?;
         Ok("./qr_code.png".to_string())
     }
 
-    // fn split_data_into_blocks(data_codewords: &Vec<u8>) -> Vec<Vec<u8>> {
-
-    // }
-
-    fn build_qr_image(&self, message: Vec<u8>) -> GrayImage {
-        let qr_code = QRFactory::build_code(QRSymbolTypes::QRCode, 2);
-
-        let dimension = qr_code.module_width();
-        let mut loud_region: GrayImage = ImageBuffer::from_pixel(dimension, dimension, Luma([128]));
-
-        Self::add_timing_patterns(&mut loud_region, qr_code.timing_coord());
-        Self::add_finder_patterns(&mut loud_region, qr_code.finder_locations());
-        Self::add_alignment_patterns(&mut loud_region, qr_code.alignment_locations());
-        loud_region
-    }
-
-    fn save_qr_image(&self, filepath: &String, loud_region: GrayImage) -> Result<(), QRError> {
+    fn save_qr_image(&self, filepath: &String, loud_region: &GrayImage) -> Result<(), QRError> {
         let dimension = loud_region.width();
         let quiet_width = 4;
         let full_dimension = dimension + quiet_width * 2;
@@ -130,7 +118,7 @@ impl QRGenerator {
 
         imageops::overlay(
             &mut full_image,
-            &loud_region,
+            loud_region,
             quiet_width as i64,
             quiet_width as i64,
         );
@@ -145,59 +133,6 @@ impl QRGenerator {
         scaled_image.save(filepath)?;
 
         Ok(())
-    }
-
-    fn add_timing_patterns(buffer: &mut GrayImage, timing_coord: u32) {
-        let horiz: GrayImage = ImageBuffer::from_fn(buffer.width(), 1, |x, _| {
-            if x % 2 == 0 {
-                Luma([0])
-            } else {
-                Luma([255])
-            }
-        });
-
-        imageops::overlay(buffer, &horiz, 0, timing_coord as i64);
-        imageops::overlay(buffer, &imageops::rotate90(&horiz), timing_coord as i64, 0);
-    }
-
-    fn add_finder_patterns(buffer: &mut GrayImage, locations: Vec<FinderLocations>) {
-        for location in locations {
-            match location {
-                FinderLocations::TopLeft => Self::add_finder_pattern(buffer, 0, 0),
-                FinderLocations::BottomLeft => {
-                    Self::add_finder_pattern(buffer, 0, buffer.height() as i64 - 7)
-                }
-                FinderLocations::TopRight => {
-                    Self::add_finder_pattern(buffer, buffer.width() as i64 - 7, 0)
-                }
-            }
-        }
-    }
-
-    fn add_finder_pattern(buffer: &mut GrayImage, left: i64, top: i64) {
-        let finder: GrayImage = ImageBuffer::from_fn(9, 9, |x, y| {
-            if x == 0 || y == 0 || x == 8 || y == 8 {
-                Luma([255])
-            } else if x == 1 || y == 1 || x == 7 || y == 7 {
-                Luma([0])
-            } else if x == 2 || y == 2 || x == 6 || y == 6 {
-                Luma([255])
-            } else {
-                Luma([0])
-            }
-        });
-
-        imageops::overlay(buffer, &finder, left - 1, top - 1);
-    }
-
-    fn add_alignment_patterns(buffer: &mut GrayImage, locations: Vec<(u32, u32)>) {
-        for (cx, cy) in locations {
-            let five: GrayImage = ImageBuffer::from_pixel(5, 5, Luma([0]));
-            let three: GrayImage = ImageBuffer::from_pixel(3, 3, Luma([255]));
-            imageops::overlay(buffer, &five, (cx as i64) - 2, (cy as i64) - 2);
-            imageops::overlay(buffer, &three, (cx as i64) - 1, (cy as i64) - 1);
-            buffer.put_pixel(cx, cy, Luma([0]));
-        }
     }
 }
 

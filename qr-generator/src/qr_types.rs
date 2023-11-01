@@ -12,6 +12,8 @@ pub trait QRSymbol {
     fn timing_coord(&self) -> u32;
     fn finder_locations(&self) -> Vec<FinderLocations>;
     fn alignment_locations(&self) -> Vec<(u32, u32)>;
+    fn format_locations(&self) -> Vec<FinderLocations>;
+    fn include_version_locations(&self) -> bool;
 }
 
 pub struct QRCode {
@@ -96,6 +98,12 @@ impl QRSymbol for QRCode {
             })
             .collect()
     }
+    fn format_locations(&self) -> Vec<FinderLocations> {
+        vec![TopLeft, TopRight, BottomLeft]
+    }
+    fn include_version_locations(&self) -> bool {
+        self.version >= 7
+    }
 }
 
 pub struct MicroQRCode {
@@ -114,9 +122,15 @@ impl QRSymbol for MicroQRCode {
     fn alignment_locations(&self) -> Vec<(u32, u32)> {
         Vec::new()
     }
+    fn format_locations(&self) -> Vec<FinderLocations> {
+        vec![TopLeft]
+    }
+    fn include_version_locations(&self) -> bool {
+        false
+    }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum QRSymbolTypes {
     QRCode,
     MicroQRCode,
