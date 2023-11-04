@@ -19,3 +19,5 @@ Cargo.lock
 *.jpg
 *.webp
 
+.DS_Store
+

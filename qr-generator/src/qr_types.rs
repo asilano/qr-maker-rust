@@ -4,8 +4,11 @@ pub enum FinderLocations {
     TopRight,
     BottomLeft,
 }
+use image::{GrayImage, Luma, imageops, GenericImageView};
 use itertools::Itertools;
 use FinderLocations::*;
+
+use crate::error_correction::CorrectionLevels;
 
 pub trait QRSymbol {
     fn module_width(&self) -> u32;
@@ -14,6 +17,10 @@ pub trait QRSymbol {
     fn alignment_locations(&self) -> Vec<(u32, u32)>;
     fn format_locations(&self) -> Vec<FinderLocations>;
     fn include_version_locations(&self) -> bool;
+    fn mask_functions(&self) -> Vec<Box<dyn Fn(u32, u32) -> bool>>;
+    fn score_masked_image(&self, image: &GrayImage) -> i32;
+    fn ec_level_bits(&self, ec_level: CorrectionLevels) -> Vec<u8>;
+    fn format_mask(&self) -> Vec<u8>;
 }
 
 pub struct QRCode {
@@ -104,6 +111,114 @@ impl QRSymbol for QRCode {
     fn include_version_locations(&self) -> bool {
         self.version >= 7
     }
+    fn mask_functions(&self) -> Vec<Box<dyn Fn(u32, u32) -> bool>> {
+        vec![
+            Box::new(|j, i| (i + j) % 2 == 0),
+            Box::new(|_, i| i % 2 == 0),
+            Box::new(|j, _| j % 3 == 0),
+            Box::new(|j, i| (i + j) % 3 == 0),
+            Box::new(|j, i| (i / 2 + j / 3) % 2 == 0),
+            Box::new(|j, i| (i * j) % 2 + (i * j) % 3 == 0),
+            Box::new(|j, i| ((i * j) % 2 + (i * j) % 3) % 2 == 0),
+            Box::new(|j, i| ((i + j) % 2 + (i * j) % 3) % 2 == 0),
+        ]
+    }
+    fn score_masked_image(&self, image: &GrayImage) -> i32 {
+        let mut score = 0i32;
+
+        // Runs of same-colour cells per row
+        for row in image.rows() {
+            let mut current = 0i32;
+            let mut run_colour = Luma([128]);
+            for pixel in row {
+                if *pixel == run_colour {
+                    current += 1;
+                } else {
+                    if current >= 5 {
+                        score -= 3 + current - 5;
+                    }
+                    run_colour = *pixel;
+                }
+            }
+        }
+
+        // Runs of same-colour cells per column
+        for col in imageops::rotate90(image).rows() {
+            let mut current = 0i32;
+            let mut run_colour = Luma([128]);
+            for pixel in col {
+                if *pixel == run_colour {
+                    current += 1;
+                } else {
+                    if current >= 5 {
+                        score -= 3 + current - 5;
+                    }
+                    run_colour = *pixel;
+                }
+            }
+        }
+
+        // 2x2 blocks of the same colour
+        let (width, height) = image.dimensions();
+        for (x, y, pixel) in image.enumerate_pixels() {
+            if x < width - 1 && y < height - 1
+                && (pixel.0[0] < 128) == (image.get_pixel(x + 1, y).0[0] < 128)
+                && (pixel.0[0] < 128) == (image.get_pixel(x + 1, y + 1).0[0] < 128)
+                && (pixel.0[0] < 128) == (image.get_pixel(x, y + 1).0[0] < 128)
+            {
+                score -= 3;
+            }
+        }
+
+        // 1011101 pattern with white run on one side - rows
+        for row in image.rows() {
+            let row_vec = row.collect::<Vec<&Luma<u8>>>();
+            let matches = row_vec.windows(11).filter(|run| {
+                let run_as_1_0 = run.iter().map(|pixel| {
+                    if pixel.0[0] < 128 { 1 } else { 0 }
+                }).collect::<Vec<u8>>();
+                (run_as_1_0 == vec![0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1]) ||
+                    (run_as_1_0 == vec![1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0])
+            }).count();
+            score -= 40 * matches as i32;
+        }
+
+        // 1011101 pattern with white run on one side - cols
+        for col in imageops::rotate90(image).rows() {
+            let col_vec = col.collect::<Vec<&Luma<u8>>>();
+            let matches = col_vec.windows(11).filter(|run| {
+                let run_as_1_0 = run.iter().map(|pixel| {
+                    if pixel.0[0] < 128 { 1 } else { 0 }
+                }).collect::<Vec<u8>>();
+                (run_as_1_0 == vec![0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1]) ||
+                    (run_as_1_0 == vec![1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0])
+            }).count();
+            score -= 40 * matches as i32;
+        }
+
+        // Proportion of dark cells
+        let total_cells = image.pixels().count();
+        let dark_cells = image.pixels().filter(|p| p.0[0] < 128).count();
+        let dark_percentage = dark_cells * 100 / total_cells;
+        let unbalance = (dark_percentage as i32 - 50).abs();
+        score -= 10 * (unbalance / 5);
+
+        score
+    }
+
+    fn ec_level_bits(&self, ec_level: CorrectionLevels) -> Vec<u8> {
+        match ec_level {
+            CorrectionLevels::L => vec![0, 1],
+            CorrectionLevels::M => vec![0, 0],
+            CorrectionLevels::Q => vec![1, 1],
+            CorrectionLevels::H => vec![1, 0],
+            CorrectionLevels::DetectionOnly => unreachable!()
+        }
+    }
+
+    fn format_mask(&self) -> Vec<u8> {
+        vec![1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0]
+    }
 }
 
 pub struct MicroQRCode {
@@ -127,6 +242,37 @@ impl QRSymbol for MicroQRCode {
     }
     fn include_version_locations(&self) -> bool {
         false
+    }
+    fn mask_functions(&self) -> Vec<Box<dyn Fn(u32, u32) -> bool>> {
+        vec![
+            Box::new(|i, _| i % 2 == 0),
+            Box::new(|i, j| (i / 2 + j / 3) % 2 == 0),
+            Box::new(|i, j| ((i * j) % 2 + (i * j) % 3) % 2 == 0),
+            Box::new(|i, j| ((i + j) % 2 + (i * j) % 3) % 2 == 0),
+        ]
+    }
+    fn score_masked_image(&self, image: &GrayImage) -> i32 {
+        let bottom_score = image.rows().last().unwrap().filter(|pixel| pixel.0[0] < 128).count() as i32;
+        let last_col_ix = image.width() - 1;
+        let right_score = image.enumerate_pixels().filter(|&(x, _, pixel)| x == last_col_ix && pixel.0[0] < 128).count() as i32;
+
+        16 * bottom_score.min(right_score) + bottom_score.max(right_score)
+    }
+    fn ec_level_bits(&self, ec_level: CorrectionLevels) -> Vec<u8> {
+        match (self.version, ec_level) {
+            (1, _) => vec![0, 0, 0],
+            (2, CorrectionLevels::L) => vec![0, 0, 1],
+            (2, _) => vec![0, 1, 0],
+            (3, CorrectionLevels::L) => vec![0, 1, 1],
+            (3, _) => vec![1, 0, 0],
+            (4, CorrectionLevels::L) => vec![1, 0, 1],
+            (4, CorrectionLevels::M) => vec![1, 1, 0],
+            (4, _) => vec![1, 1, 1],
+            _ => unreachable!()
+        }
+    }
+    fn format_mask(&self) -> Vec<u8> {
+        vec![1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1]
     }
 }
 

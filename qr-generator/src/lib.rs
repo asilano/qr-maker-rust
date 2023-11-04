@@ -93,7 +93,7 @@ impl QRGenerator {
         let message_sequence: Vec<u8> = error_corrector.interleave().collect();
         println!("{:?}", message_sequence);
 
-        let mut image_builder = ImageBuilder::new(self.options.qr_type.unwrap(), self.options.version.unwrap(), &message_sequence);
+        let mut image_builder = ImageBuilder::new(self.options.qr_type.unwrap(), self.options.version.unwrap(), &message_sequence, self.options.correction_level.unwrap());
         image_builder.build_qr_image();
 
         // let unmasked_image: GrayImage = self.build_qr_image(message_sequence);
@@ -108,13 +108,7 @@ impl QRGenerator {
         let quiet_width = 4;
         let full_dimension = dimension + quiet_width * 2;
         let mut full_image: GrayImage =
-            ImageBuffer::from_fn(full_dimension, full_dimension, |x, y| {
-                if x < quiet_width || x >= dimension || y < quiet_width || y >= dimension {
-                    Luma([255])
-                } else {
-                    Luma([128])
-                }
-            });
+            ImageBuffer::from_pixel(full_dimension, full_dimension, Luma([255]));
 
         imageops::overlay(
             &mut full_image,

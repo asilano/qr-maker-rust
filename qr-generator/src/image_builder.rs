@@ -1,29 +1,24 @@
 use image::{GrayImage, ImageBuffer, Luma, imageops};
+use polynomial_arithmetic::{Polynomial, IntMod, One, Zero};
 
 use crate::{
     QRSymbolTypes,
-    qr_types::{QRSymbol, QRFactory, FinderLocations}
+    qr_types::{QRSymbol, QRFactory, FinderLocations}, error_correction::CorrectionLevels
 };
 pub struct ImageBuilder<'a> {
     qr_code: Box<dyn QRSymbol>,
     message: &'a Vec<u8>,
     loud_region: Option<GrayImage>,
-    white: Luma<u8>,
-    black: Luma<u8>,
-    fn_white: Luma<u8>,
-    fn_black: Luma<u8>
+    correction_level: CorrectionLevels
 }
 
 impl<'a> ImageBuilder<'a> {
-    pub fn new(qr_type: QRSymbolTypes, version: u32, message: &'a Vec<u8>) -> Self {
+    pub fn new(qr_type: QRSymbolTypes, version: u32, message: &'a Vec<u8>, correction_level: CorrectionLevels) -> Self {
         Self {
             qr_code: QRFactory::build_code(qr_type, version),
             message,
             loud_region: None,
-            white: Luma([255]),
-            black: Luma([0]),
-            fn_white: Luma([200]),
-            fn_black: Luma([50])
+            correction_level
         }
     }
 
@@ -35,20 +30,58 @@ impl<'a> ImageBuilder<'a> {
         self.add_finder_patterns(self.qr_code.finder_locations());
         self.add_alignment_patterns(self.qr_code.alignment_locations());
         self.reserve_format_and_version_space(self.qr_code.finder_locations(), self.qr_code.include_version_locations());
+        let scale_factor = 5;
+        let scaled_size = self.loud_region.as_ref().unwrap().width() * scale_factor;
+        let scaled_image = imageops::resize(
+            self.loud_region.as_ref().unwrap(),
+            scaled_size,
+            scaled_size,
+            imageops::FilterType::Nearest,
+        );
+        scaled_image.save(&"./function_patts.png".to_string());
+
+
         self.add_message_stream();
+        let scaled_image = imageops::resize(
+            self.loud_region.as_ref().unwrap(),
+            scaled_size,
+            scaled_size,
+            imageops::FilterType::Nearest,
+        );
+        scaled_image.save(&"./data_unmasked.png".to_string());
+
+        let chosen_mask = self.mask_data_area();
+        println!("Mask: {:?}", chosen_mask);
+
+        let scaled_image = imageops::resize(
+            self.loud_region.as_ref().unwrap(),
+            scaled_size,
+            scaled_size,
+            imageops::FilterType::Nearest,
+        );
+        scaled_image.save(&"./masked.png".to_string());
+
+        self.add_format_information(chosen_mask, self.qr_code.finder_locations());
+        // self.add_version_information()
+        self.recolour_function_pixels();
     }
 
     pub fn get_image(&self) -> &GrayImage {
         self.loud_region.as_ref().unwrap()
     }
 
+    fn white() -> Luma<u8> { Luma([255]) }
+    fn black() -> Luma<u8> { Luma([0]) }
+    fn fn_white() -> Luma<u8> { Luma([200]) }
+    fn fn_black() -> Luma<u8> { Luma([50]) }
+
     fn add_timing_patterns(&mut self, timing_coord: u32) {
         let buffer = self.loud_region.as_mut().unwrap();
         let horiz: GrayImage = ImageBuffer::from_fn(buffer.width(), 1, |x, _| {
             if x % 2 == 0 {
-                self.fn_black
+                Self::fn_black()
             } else {
-                self.fn_white
+                Self::fn_white()
             }
         });
 
@@ -61,13 +94,13 @@ impl<'a> ImageBuilder<'a> {
         for location in locations {
             match location {
                 FinderLocations::TopLeft => {
-                    Self::add_finder_pattern(buffer, 0, 0, self.fn_white, self.fn_black)
+                    Self::add_finder_pattern(buffer, 0, 0, Self::fn_white(), Self::fn_black())
                 }
                 FinderLocations::BottomLeft => {
-                    Self::add_finder_pattern(buffer, 0, buffer.height() as i64 - 7, self.fn_white, self.fn_black)
+                    Self::add_finder_pattern(buffer, 0, buffer.height() as i64 - 7, Self::fn_white(), Self::fn_black())
                 }
                 FinderLocations::TopRight => {
-                    Self::add_finder_pattern(buffer, buffer.width() as i64 - 7, 0, self.fn_white, self.fn_black)
+                    Self::add_finder_pattern(buffer, buffer.width() as i64 - 7, 0, Self::fn_white(), Self::fn_black())
                 }
             }
         }
@@ -92,11 +125,11 @@ impl<'a> ImageBuilder<'a> {
     fn add_alignment_patterns(&mut self, locations: Vec<(u32, u32)>) {
         let buffer = self.loud_region.as_mut().unwrap();
         for (cx, cy) in locations {
-            let five: GrayImage = ImageBuffer::from_pixel(5, 5, self.fn_black);
-            let three: GrayImage = ImageBuffer::from_pixel(3, 3, self.fn_white);
+            let five: GrayImage = ImageBuffer::from_pixel(5, 5, Self::fn_black());
+            let three: GrayImage = ImageBuffer::from_pixel(3, 3, Self::fn_white());
             imageops::overlay(buffer, &five, (cx as i64) - 2, (cy as i64) - 2);
             imageops::overlay(buffer, &three, (cx as i64) - 1, (cy as i64) - 1);
-            buffer.put_pixel(cx, cy, self.fn_black);
+            buffer.put_pixel(cx, cy, Self::fn_black());
         }
     }
 
@@ -106,26 +139,26 @@ impl<'a> ImageBuilder<'a> {
             match location {
                 FinderLocations::TopLeft => {
                     for n in 0..9 {
-                        buffer.put_pixel(8, n, self.fn_black);
-                        buffer.put_pixel(n, 8, self.fn_black);
+                        buffer.put_pixel(8, n, Self::fn_black());
+                        buffer.put_pixel(n, 8, Self::fn_black());
                     }
                 },
                 FinderLocations::BottomLeft => {
                     for n in 0..8 {
-                        buffer.put_pixel(8, buffer.height() - 1 - n, self.fn_black);
+                        buffer.put_pixel(8, buffer.height() - 1 - n, Self::fn_black());
                     }
                 }
                 FinderLocations::TopRight => {
                     for n in 0..8 {
-                        buffer.put_pixel(buffer.width() - 1 - n, 8, self.fn_black);
+                        buffer.put_pixel(buffer.width() - 1 - n, 8, Self::fn_black());
                     }
                 }
             }
         }
 
         if include_versions {
-            let tr_region: GrayImage = ImageBuffer::from_pixel(3, 6, self.fn_black);
-            let bl_region: GrayImage = ImageBuffer::from_pixel(6, 3, self.fn_black);
+            let tr_region: GrayImage = ImageBuffer::from_pixel(3, 6, Self::fn_black());
+            let bl_region: GrayImage = ImageBuffer::from_pixel(6, 3, Self::fn_black());
             imageops::overlay(buffer, &tr_region, buffer.width() as i64 - 11, 0);
             imageops::overlay(buffer, &bl_region, 0, buffer.height() as i64 - 11);
         }
@@ -138,8 +171,138 @@ impl<'a> ImageBuilder<'a> {
         let loud_copy = self.loud_region.as_ref().unwrap().clone();
         let cells = MessageCells::new(&loud_copy, self.qr_code.timing_coord());
         for (bit, (x, y)) in bits.zip(cells) {
-            let colour = if bit == 1 { self.black } else { self.white };
+            let colour = if bit == 1 { Self::black() } else { Self::white() };
             self.loud_region.as_mut().unwrap().put_pixel(x, y, colour);
+        }
+    }
+
+    // Returns mask identifier, MSB first
+    fn mask_data_area(&mut self) -> Vec<u8> {
+        let mask_candidates = self.qr_code.mask_functions();
+
+        let (mask_number, mask) = mask_candidates.iter().enumerate().max_by_key(|(_, mask)| {
+            let mut loud_copy = self.loud_region.as_ref().unwrap().clone();
+            Self::apply_mask(&mut loud_copy, mask);
+            self.qr_code.score_masked_image(&loud_copy)
+        }).unwrap();
+
+        // Found best mask; apply it to the real image
+        Self::apply_mask(self.loud_region.as_mut().unwrap(), mask);
+
+        if mask_candidates.len() > 4 {
+            vec![(mask_number as u8 >> 2) % 2,
+                (mask_number as u8 >> 1) % 2,
+                mask_number as u8 % 2]
+        } else {
+            vec![(mask_number as u8 >> 1) % 2,
+                mask_number as u8 % 2]
+        }
+    }
+
+    fn apply_mask(image: &mut GrayImage, mask_fn: &dyn Fn(u32, u32) -> bool) {
+        for (x, y, pixel) in image.enumerate_pixels_mut() {
+            if *pixel == Self::white() || *pixel == Self::black() {
+                // Not a function pixel
+                if (*pixel == Self::black()) == mask_fn(x, y) {
+                    *pixel = Self::white();
+                } else {
+                    *pixel = Self::black();
+                }
+            }
+        }
+    }
+
+    fn add_format_information(&mut self, mask_bits: Vec<u8>, locations: Vec<FinderLocations>) {
+        let mut format_bits = self.qr_code.ec_level_bits(self.correction_level);
+        format_bits.extend(mask_bits.iter());
+        assert!(format_bits.len() == 5);
+
+        let one = IntMod::<2>::one();
+        let zero = IntMod::<2>::zero();
+        let mut format_poly = Polynomial::<IntMod<2>>::from(format_bits.iter().rev().map(|&b| IntMod::<2>::from(b as u32)).collect::<Vec<IntMod<2>>>());
+        let mut x10 = vec![zero; 10];
+        x10.push(one);
+        format_poly = format_poly * Polynomial::<IntMod<2>>::from(x10);
+
+        let ec_generator = Polynomial::<IntMod<2>>::from(vec![one, one, one, zero, one, one, zero, zero, one, zero, one]);
+        let ec_poly = format_poly % ec_generator;
+        let ec_len = ec_poly.coefficients.len();
+        for _ in 0..(10 - ec_len) {
+            format_bits.push(0);
+        }
+        format_bits.extend(ec_poly.coefficients.iter().rev().map(|bit| bit.value as u8));
+
+        let mask = self.qr_code.format_mask();
+        for (data, mask) in format_bits.iter_mut().zip(mask.iter()) {
+            if *data == *mask {
+                *data = 0;
+            } else {
+                *data = 1;
+            }
+        }
+        println!("{:?}", format_bits);
+
+        // Apply the final format info into the reserved areas
+        let timing_coord = self.qr_code.timing_coord();
+        let buffer = self.loud_region.as_mut().unwrap();
+        for location in locations {
+            let mut format_iter = format_bits.iter().rev();
+            match location {
+                FinderLocations::TopLeft => {
+                    for n in 0..9 {
+                        if n != timing_coord {
+                            let pixel = match format_iter.next() {
+                                Some(0) => Self::white(),
+                                Some(1) => Self::black(),
+                                _ => unreachable!()
+                            };
+                            buffer.put_pixel(8, n, pixel);
+                        }
+                    }
+                    for n in 1..9 {
+                        if 8 - n != timing_coord {
+                            let pixel = match format_iter.next() {
+                                Some(0) => Self::white(),
+                                Some(1) => Self::black(),
+                                _ => unreachable!()
+                            };
+                            buffer.put_pixel(8 - n, 8, pixel);
+                        }
+                    }
+                },
+                FinderLocations::BottomLeft => {
+                    let mut second_half = format_iter.skip(8);
+                    for n in 0..7 {
+                        let pixel = match second_half.next() {
+                            Some(0) => Self::white(),
+                            Some(1) => Self::black(),
+                            _ => unreachable!()
+                        };
+                        buffer.put_pixel(8, buffer.height() - 7 + n, pixel);
+                    }
+                }
+                FinderLocations::TopRight => {
+                    for n in 0..8 {
+                        let pixel = match format_iter.next() {
+                            Some(0) => Self::white(),
+                            Some(1) => Self::black(),
+                            _ => unreachable!()
+                        };
+                        buffer.put_pixel(buffer.width() - 1 - n, 8, pixel);
+                    }
+                }
+            }
+        }
+
+    }
+
+    fn recolour_function_pixels(&mut self) {
+        for pixel in self.loud_region.as_mut().unwrap().pixels_mut() {
+            *pixel = if pixel.0[0] < 128 {
+                Luma([0])
+            } else {
+                Luma([255])
+            }
         }
     }
 }

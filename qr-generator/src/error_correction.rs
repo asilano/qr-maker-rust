@@ -2,7 +2,7 @@ use reed_solomon::{Polynomial, IntMod, ReedSolomonEncoder, GaloisField};
 
 use crate::qr_errors::EncodingError;
 
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy)]
 pub enum CorrectionLevels {
     DetectionOnly,
     L,
