@@ -65,7 +65,6 @@ impl ErrorCorrector {
         for ec_block in self.blocks.iter_mut() {
             ec_block.generate_error_correction();
         }
-        println!("{:?}", self.blocks);
     }
 
     pub fn interleave(&self) -> BlockInterleaver {

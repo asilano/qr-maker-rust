@@ -30,37 +30,8 @@ impl<'a> ImageBuilder<'a> {
         self.add_finder_patterns(self.qr_code.finder_locations());
         self.add_alignment_patterns(self.qr_code.alignment_locations());
         self.reserve_format_and_version_space(self.qr_code.finder_locations(), self.qr_code.include_version_locations());
-        let scale_factor = 5;
-        let scaled_size = self.loud_region.as_ref().unwrap().width() * scale_factor;
-        let scaled_image = imageops::resize(
-            self.loud_region.as_ref().unwrap(),
-            scaled_size,
-            scaled_size,
-            imageops::FilterType::Nearest,
-        );
-        scaled_image.save(&"./function_patts.png".to_string());
-
-
         self.add_message_stream();
-        let scaled_image = imageops::resize(
-            self.loud_region.as_ref().unwrap(),
-            scaled_size,
-            scaled_size,
-            imageops::FilterType::Nearest,
-        );
-        scaled_image.save(&"./data_unmasked.png".to_string());
-
         let chosen_mask = self.mask_data_area();
-        println!("Mask: {:?}", chosen_mask);
-
-        let scaled_image = imageops::resize(
-            self.loud_region.as_ref().unwrap(),
-            scaled_size,
-            scaled_size,
-            imageops::FilterType::Nearest,
-        );
-        scaled_image.save(&"./masked.png".to_string());
-
         self.add_format_information(chosen_mask, self.qr_code.finder_locations());
         if self.qr_code.include_version_locations() {
             self.add_version_information();
@@ -242,7 +213,6 @@ impl<'a> ImageBuilder<'a> {
                 *data = 1;
             }
         }
-        println!("{:?}", format_bits);
 
         // Apply the final format info into the reserved areas
         let timing_coord = self.qr_code.timing_coord();
@@ -312,7 +282,6 @@ impl<'a> ImageBuilder<'a> {
         let ec_generator = Polynomial::<IntMod<2>>::from(vec![one, zero, one, zero, zero, one, zero, zero, one, one, one, one, one]);
         let ec_poly = &version_poly % &ec_generator;
         version_poly = version_poly + ec_poly;
-        println!("Version: {:?}", version_poly.coefficients);
 
         let mut version_area: GrayImage = ImageBuffer::from_pixel(3, 6, Luma([255]));
         for (index, bit) in version_poly.coefficients.iter().enumerate() {

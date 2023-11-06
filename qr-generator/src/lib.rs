@@ -58,30 +58,6 @@ impl QRGenerator {
         let data_bitstream = &encoder.output_data;
         let data_codewords = data_bitstream.clone().into_vec();
 
-        println!(
-            "Version: {}, Correction: {:?}",
-            self.options.version.unwrap(),
-            self.options.correction_level.as_ref().unwrap()
-        );
-        println!(
-            "{}",
-            data_bitstream
-                .iter()
-                .map(|b| if *b { "1" } else { "0" })
-                .collect::<Vec<&str>>()
-                .join("")
-        );
-        println!("{} bits", data_bitstream.len());
-
-        println!(
-            "{}",
-            data_codewords
-                .iter()
-                .map(|&n| n.to_string())
-                .collect::<Vec<String>>()
-                .join(" ")
-        );
-
         let mut error_corrector = ErrorCorrector::from(&Sizer::error_correction_shape(
             self.options.qr_type.as_ref().unwrap(),
             self.options.version.unwrap(),
@@ -91,7 +67,6 @@ impl QRGenerator {
         error_corrector.generate_error_correction();
 
         let message_sequence: Vec<u8> = error_corrector.interleave().collect();
-        println!("{:?}", message_sequence);
 
         let mut image_builder = ImageBuilder::new(self.options.qr_type.unwrap(), self.options.version.unwrap(), &message_sequence, self.options.correction_level.unwrap());
         image_builder.build_qr_image();
