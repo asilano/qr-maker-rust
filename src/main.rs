@@ -4,7 +4,7 @@ use std::process;
 fn main() {
     let options = qr_generator::Options {
     //    mode: Some(EncodingModes::Numeric),
-    //    version: Some(7),
+        version: Some(7),
         ..Default::default()
     };
     let mut generator = QRGenerator { options };

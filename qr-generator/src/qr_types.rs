@@ -11,6 +11,7 @@ use FinderLocations::*;
 use crate::error_correction::CorrectionLevels;
 
 pub trait QRSymbol {
+    fn version(&self) -> u32;
     fn module_width(&self) -> u32;
     fn timing_coord(&self) -> u32;
     fn finder_locations(&self) -> Vec<FinderLocations>;
@@ -74,6 +75,9 @@ impl QRCode {
     }
 }
 impl QRSymbol for QRCode {
+    fn version(&self) -> u32 {
+        self.version
+    }
     fn module_width(&self) -> u32 {
         21 + 4 * (self.version - 1)
     }
@@ -225,6 +229,9 @@ pub struct MicroQRCode {
     version: u32,
 }
 impl QRSymbol for MicroQRCode {
+    fn version(&self) -> u32 {
+        self.version
+    }
     fn module_width(&self) -> u32 {
         11 + 2 * (self.version - 1)
     }

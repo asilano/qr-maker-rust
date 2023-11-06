@@ -62,7 +62,9 @@ impl<'a> ImageBuilder<'a> {
         scaled_image.save(&"./masked.png".to_string());
 
         self.add_format_information(chosen_mask, self.qr_code.finder_locations());
-        // self.add_version_information()
+        if self.qr_code.include_version_locations() {
+            self.add_version_information();
+        }
         self.recolour_function_pixels();
     }
 
@@ -294,6 +296,36 @@ impl<'a> ImageBuilder<'a> {
             }
         }
 
+    }
+
+    fn add_version_information(&mut self) {
+        let version = self.qr_code.version();
+        let version_bits = (0..6).map(|b| IntMod::<2>::from((version >> b) % 2)).collect::<Vec<IntMod<2>>>();
+        let mut version_poly = Polynomial::<IntMod<2>>::from(version_bits.clone());
+
+        let one = IntMod::<2>::one();
+        let zero = IntMod::<2>::zero();
+        let mut x12 = vec![zero; 12];
+        x12.push(one);
+        version_poly = version_poly * Polynomial::<IntMod<2>>::from(x12);
+
+        let ec_generator = Polynomial::<IntMod<2>>::from(vec![one, zero, one, zero, zero, one, zero, zero, one, one, one, one, one]);
+        let ec_poly = &version_poly % &ec_generator;
+        version_poly = version_poly + ec_poly;
+        println!("Version: {:?}", version_poly.coefficients);
+
+        let mut version_area: GrayImage = ImageBuffer::from_pixel(3, 6, Luma([255]));
+        for (index, bit) in version_poly.coefficients.iter().enumerate() {
+            if bit.value == 1 {
+                version_area.put_pixel(index as u32 % 3, index as u32 / 3, Luma([0]));
+            }
+        }
+
+        let buffer = self.loud_region.as_mut().unwrap();
+        imageops::overlay(buffer, &version_area, buffer.width() as i64 - 11, 0);
+        version_area = imageops::rotate270(&version_area);
+        imageops::flip_vertical_in_place(&mut version_area);
+        imageops::overlay(buffer, &version_area, 0, buffer.height() as i64 - 11);
     }
 
     fn recolour_function_pixels(&mut self) {
