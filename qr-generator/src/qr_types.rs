@@ -4,7 +4,7 @@ pub enum FinderLocations {
     TopRight,
     BottomLeft,
 }
-use image::{GrayImage, Luma, imageops, GenericImageView};
+use image::{GrayImage, Luma, imageops};
 use itertools::Itertools;
 use FinderLocations::*;
 

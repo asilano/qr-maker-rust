@@ -58,6 +58,7 @@ for<'a> &'a GF::CoeffType: Add<Output = GF::CoeffType>
         (&message_poly - &remainder).coefficients.into_iter().rev().map(|c| c.poly).collect()
     }
 
+    #[allow(dead_code)]
     fn decode(&self, rcvd: Vec<Polynomial<GF::CoeffType>>, ec_count: usize) -> Vec<Polynomial<GF::CoeffType>> {
         let mut rcvd_poly = Polynomial::from(
             rcvd

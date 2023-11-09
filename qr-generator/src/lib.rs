@@ -10,7 +10,6 @@ pub use error_correction::CorrectionLevels;
 use image::{imageops, GrayImage, ImageBuffer, Luma};
 use qr_errors::QRError;
 pub use qr_types::QRSymbolTypes;
-use qr_types::{FinderLocations, QRFactory};
 use sizer::Sizer;
 
 use crate::{error_correction::ErrorCorrector, image_builder::ImageBuilder};

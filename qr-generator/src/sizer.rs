@@ -1,6 +1,6 @@
 use crate::{
     encoder::EncodingModes, error_correction::CorrectionLevels, qr_errors::EncodingError, Options,
-    QRError, QRGenerator, QRSymbolTypes,
+    QRError, QRSymbolTypes,
 };
 pub struct Sizer;
 

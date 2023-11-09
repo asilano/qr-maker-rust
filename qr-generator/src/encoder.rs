@@ -441,7 +441,7 @@ impl<'a> Encoder<'a> {
 
     fn calculate_change_distances(input_data: &String) -> Vec<DistToNextType> {
         let mut byte_rindex: Option<usize> = None;
-        let mut kanji_rindex: Option<usize> = None;
+        // let mut kanji_rindex: Option<usize> = None; // Not supporting Kanji
         let mut alphanum_rindex: Option<usize> = None;
         let mut numeric_rindex: Option<usize> = None;
         let input_len = input_data.len();
