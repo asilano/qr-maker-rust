@@ -74,7 +74,7 @@ impl<'a> Encoder<'a> {
             let (next_encoding, mut bit_run, char_count) = match current_encoding {
                 EncodingModes::Numeric => Self::encode_numeric_run(&mut input_iter),
                 EncodingModes::AlphaNumeric => Self::encode_alphanumeric_run(&mut input_iter),
-                // EncodingModes::Byte => self.encode_byte_run(&mut input_iter),
+                EncodingModes::Byte => Self::encode_byte_run(&mut input_iter),
                 _ => unreachable!(),
             };
             self.output_data
@@ -267,6 +267,30 @@ impl<'a> Encoder<'a> {
         }
 
         (EncodingModes::Numeric, encoded_alphanums, char_count)
+    }
+
+    fn encode_byte_run<'b, Input>(
+        input: &mut Peekable<Input>,
+    ) -> (EncodingModes, BitVec<u8, Msb0>, usize)
+    where
+        Input: Iterator<Item = (char, &'b DistToNextType)>,
+    {
+        let mut byte_count = 0usize;
+        let mut encoded_bytes = bitvec![u8, Msb0;];
+
+        for (char, _) in input {
+            let mut byte_space = [0; 4];
+            let bytes = char.encode_utf8(&mut byte_space);
+            byte_count += bytes.len();
+
+            let mut bits = bitarr![u16, Msb0; 0; 8];
+            for byte in bytes.bytes() {
+                bits[0..8].store(byte);
+                encoded_bytes.extend_from_bitslice(&bits[0..8]);
+            }
+        }
+
+        (EncodingModes::Numeric, encoded_bytes, byte_count)
     }
 
     fn sequence_preamble(&self, encoding: EncodingModes, char_count: usize) -> BitVec<u8, Msb0> {
