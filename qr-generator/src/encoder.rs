@@ -73,7 +73,7 @@ impl<'a> Encoder<'a> {
         while input_iter.peek().is_some() {
             let (next_encoding, mut bit_run, char_count) = match current_encoding {
                 EncodingModes::Numeric => Self::encode_numeric_run(&mut input_iter),
-                // EncodingModes::AlphaNumeric => self.encode_alphanumeric_run(&mut input_iter),
+                EncodingModes::AlphaNumeric => Self::encode_alphanumeric_run(&mut input_iter),
                 // EncodingModes::Byte => self.encode_byte_run(&mut input_iter),
                 _ => unreachable!(),
             };
@@ -148,6 +148,7 @@ impl<'a> Encoder<'a> {
 
     fn select_initial_encoding(&self) -> EncodingModes {
         if self.generator.options.qr_type == Some(QRSymbolTypes::MicroQRCode) {
+            // TODO: Implement Micro QRs here and elsewhere
             panic!("Unimplemented select_initial_encoding for Micro QR codes");
         }
 
@@ -233,7 +234,39 @@ impl<'a> Encoder<'a> {
             encoded_numbers.extend_from_bitslice(&bits[0..bit_count]);
         }
 
+        // TODO: Allow changing modes in Dynamic encoding
         (EncodingModes::Numeric, encoded_numbers, char_count)
+    }
+
+    fn encode_alphanumeric_run<'b, Input>(
+        input: &mut Peekable<Input>,
+    ) -> (EncodingModes, BitVec<u8, Msb0>, usize)
+    where
+        Input: Iterator<Item = (char, &'b DistToNextType)>,
+    {
+        let alphanums = input.peeking_take_while(|(c, _)| Self::is_qr_alphanumeric(*c));
+        let mut char_count = 0usize;
+        let mut encoded_alphanums = bitvec![u8, Msb0;];
+
+        for chunk in &alphanums.chunks(2) {
+            let chunk_vec: Vec<char> = chunk.map(|(c, _)| c).collect();
+            let chunk_size = chunk_vec.len();
+            char_count += chunk_size;
+
+            if chunk_size == 1 {
+                let mut bits = bitarr![u16, Msb0; 0; 6];
+                let value = Self::qr_alphanumeric_value(chunk_vec[0]);
+                bits[0..6].store(value);
+                encoded_alphanums.extend_from_bitslice(&bits[0..6]);
+            } else {
+                let mut bits = bitarr![u16, Msb0; 0; 11];
+                let value = Self::qr_alphanumeric_value(chunk_vec[0]) * 45 + Self::qr_alphanumeric_value(chunk_vec[1]);
+                bits[0..11].store(value);
+                encoded_alphanums.extend_from_bitslice(&bits[0..11]);
+            }
+        }
+
+        (EncodingModes::Numeric, encoded_alphanums, char_count)
     }
 
     fn sequence_preamble(&self, encoding: EncodingModes, char_count: usize) -> BitVec<u8, Msb0> {
@@ -420,6 +453,22 @@ impl<'a> Encoder<'a> {
 
     fn is_qr_alphanumeric(c: char) -> bool {
         ('0'..='9').contains(&c) || ('A'..='Z').contains(&c) || " $%*+-./:".contains(c)
+    }
+
+    fn qr_alphanumeric_value(c: char) -> u32 {
+        match c {
+            ('0'..='9') | ('A'..='Z') => c.to_digit(36).unwrap() as u32,
+            ' ' => 36,
+            '$' => 37,
+            '%' => 38,
+            '*' => 39,
+            '+' => 40,
+            '-' => 41,
+            '.' => 42,
+            '/' => 43,
+            ':' => 44,
+            _ => unreachable!("Non-alphanumeric character in alphanum run")
+        }
     }
 
     fn char_type(c: char) -> CharacterTypes {

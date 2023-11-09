@@ -6,7 +6,7 @@ mod sizer;
 mod image_builder;
 use encoder::Encoder;
 pub use encoder::EncodingModes;
-use error_correction::CorrectionLevels;
+pub use error_correction::CorrectionLevels;
 use image::{imageops, GrayImage, ImageBuffer, Luma};
 use qr_errors::QRError;
 pub use qr_types::QRSymbolTypes;
