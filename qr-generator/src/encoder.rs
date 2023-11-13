@@ -23,6 +23,7 @@ struct DistToNextType {
     alpha_numeric: Option<usize>,
     kanji: Option<usize>,
     byte: Option<usize>,
+    end: usize
 }
 
 pub struct Encoder<'a> {
@@ -73,14 +74,16 @@ impl<'a> Encoder<'a> {
         while input_iter.peek().is_some() {
             let (next_encoding, mut bit_run, char_count) = match current_encoding {
                 EncodingModes::Numeric => Self::encode_numeric_run(&mut input_iter),
-                EncodingModes::AlphaNumeric => Self::encode_alphanumeric_run(&mut input_iter),
-                EncodingModes::Byte => Self::encode_byte_run(&mut input_iter),
+                EncodingModes::AlphaNumeric => self.encode_alphanumeric_run(&mut input_iter),
+                EncodingModes::Byte => self.encode_byte_run(&mut input_iter),
                 _ => unreachable!(),
             };
             self.output_data
                 .append(&mut self.sequence_preamble(current_encoding, char_count));
             self.output_data.append(&mut bit_run);
-            current_encoding = next_encoding;
+            if dynamic_mode {
+                current_encoding = next_encoding;
+            }
         }
 
         self.output_data.append(&mut self.terminator());
@@ -234,17 +237,34 @@ impl<'a> Encoder<'a> {
             encoded_numbers.extend_from_bitslice(&bits[0..bit_count]);
         }
 
-        // TODO: Allow changing modes in Dynamic encoding
-        (EncodingModes::Numeric, encoded_numbers, char_count)
+        let next_mode = if let Some(&(c, _)) = input.peek() {
+            Self::char_type(c)
+        } else {
+            // Doesn't matter
+            EncodingModes::Numeric
+        };
+        (next_mode, encoded_numbers, char_count)
     }
 
     fn encode_alphanumeric_run<'b, Input>(
+        &self,
         input: &mut Peekable<Input>,
     ) -> (EncodingModes, BitVec<u8, Msb0>, usize)
     where
         Input: Iterator<Item = (char, &'b DistToNextType)>,
     {
-        let alphanums = input.peeking_take_while(|(c, _)| Self::is_qr_alphanumeric(*c));
+        let alphanums = input.peeking_take_while(|&(c, distances)| {
+            let min_dist_to_non_num = match self.size_estimate {
+                (0..=9) => 13,
+                (10..=26) => 15,
+                (27..) => 17,
+            };
+            Self::is_qr_alphanumeric(c)
+                && (!c.is_ascii_digit()
+                    || distances.alpha_numeric.unwrap_or(usize::MAX)
+                        .min(distances.byte.unwrap_or(usize::MAX)
+                        .min(distances.end)) < min_dist_to_non_num)
+        });
         let mut char_count = 0usize;
         let mut encoded_alphanums = bitvec![u8, Msb0;];
 
@@ -266,19 +286,51 @@ impl<'a> Encoder<'a> {
             }
         }
 
-        (EncodingModes::Numeric, encoded_alphanums, char_count)
+        let next_mode = if let Some(&(c, _)) = input.peek() {
+            Self::char_type(c)
+        } else {
+            // Doesn't matter
+            EncodingModes::Numeric
+        };
+        (next_mode, encoded_alphanums, char_count)
     }
 
     fn encode_byte_run<'b, Input>(
+        &self,
         input: &mut Peekable<Input>,
     ) -> (EncodingModes, BitVec<u8, Msb0>, usize)
     where
         Input: Iterator<Item = (char, &'b DistToNextType)>,
     {
+        let bytes = input.peeking_take_while(|&(c, distances)| {
+            let min_dist_alphanum_to_byte = match self.size_estimate {
+                (0..=9) => 11,
+                (10..=26) => 15,
+                (27..) => 16,
+            };
+            let min_dist_num_to_byte = match self.size_estimate {
+                (0..=9) => 6,
+                (10..=26) => 8,
+                (27..) => 9,
+            };
+            let min_dist_num_to_alphanum = match self.size_estimate {
+                (0..=9) => 6,
+                (10..=26) => 7,
+                (27..) => 8,
+            };
+
+            let change_to_alphanum = Self::is_qr_alphanumeric(c)
+                && distances.byte.unwrap_or(usize::MAX).min(distances.end) >= min_dist_alphanum_to_byte;
+            let change_to_numeric = c.is_ascii_digit()
+                && (distances.byte.unwrap_or(usize::MAX).min(distances.end) >= min_dist_num_to_byte
+                    || distances.alpha_numeric.unwrap_or(usize::MAX).min(distances.end) >= min_dist_num_to_alphanum);
+            !(change_to_alphanum || change_to_numeric)
+        });
+
         let mut byte_count = 0usize;
         let mut encoded_bytes = bitvec![u8, Msb0;];
 
-        for (char, _) in input {
+        for (char, _) in bytes {
             let mut byte_space = [0; 4];
             let bytes = char.encode_utf8(&mut byte_space);
             byte_count += bytes.len();
@@ -290,7 +342,13 @@ impl<'a> Encoder<'a> {
             }
         }
 
-        (EncodingModes::Numeric, encoded_bytes, byte_count)
+        let next_mode = if let Some(&(c, _)) = input.peek() {
+            Self::char_type(c)
+        } else {
+            // Doesn't matter
+            EncodingModes::Byte
+        };
+        (next_mode, encoded_bytes, byte_count)
     }
 
     fn sequence_preamble(&self, encoding: EncodingModes, char_count: usize) -> BitVec<u8, Msb0> {
@@ -334,7 +392,7 @@ impl<'a> Encoder<'a> {
                     _ => unreachable!(),
                 }) as usize
             }
-            Some(QRSymbolTypes::QRCode) => match encoding {
+            Some(QRSymbolTypes::QRCode) => *match encoding {
                 EncodingModes::Numeric => HashMap::from([(9, 10), (26, 12), (40, 14)]),
                 EncodingModes::AlphaNumeric => HashMap::from([(9, 9), (26, 11), (40, 13)]),
                 EncodingModes::Byte => HashMap::from([(9, 8), (26, 16), (40, 16)]),
@@ -342,8 +400,7 @@ impl<'a> Encoder<'a> {
                 _ => unreachable!(),
             }
             .get(&self.size_estimate)
-            .unwrap()
-            .clone() as usize,
+            .unwrap() as usize,
             _ => unreachable!(),
         };
         let mut len_indicator = bitvec![u16, Msb0; 0; len_indicator_len];
@@ -460,15 +517,16 @@ impl<'a> Encoder<'a> {
                 _ => unreachable!(),
             };
 
-            let byte = byte_rindex.and_then(|rix| Some(from_end - rix));
-            let alpha_numeric = alphanum_rindex.and_then(|rix| Some(from_end - rix));
-            let numeric = numeric_rindex.and_then(|rix| Some(from_end - rix));
+            let byte = byte_rindex.map(|rix| from_end - rix);
+            let alpha_numeric = alphanum_rindex.map(|rix| from_end - rix);
+            let numeric = numeric_rindex.map(|rix| from_end - rix);
 
             distances[input_len - from_end - 1] = DistToNextType {
                 numeric,
                 alpha_numeric,
                 kanji: None,
                 byte,
+                end: from_end + 1
             };
         }
 
@@ -659,19 +717,22 @@ mod tests {
                     byte: None,
                     alpha_numeric: Some(0),
                     numeric: None,
-                    kanji: None
+                    kanji: None,
+                    end: 3
                 },
                 DistToNextType {
                     byte: None,
                     alpha_numeric: Some(0),
                     numeric: None,
-                    kanji: None
+                    kanji: None,
+                    end: 2
                 },
                 DistToNextType {
                     byte: None,
                     alpha_numeric: Some(0),
                     numeric: None,
-                    kanji: None
+                    kanji: None,
+                    end: 1
                 },
             ]
         );
@@ -684,19 +745,22 @@ mod tests {
                     byte: None,
                     alpha_numeric: Some(0),
                     numeric: Some(1),
-                    kanji: None
+                    kanji: None,
+                    end: 3
                 },
                 DistToNextType {
                     byte: None,
                     alpha_numeric: Some(1),
                     numeric: Some(0),
-                    kanji: None
+                    kanji: None,
+                    end: 2
                 },
                 DistToNextType {
                     byte: None,
                     alpha_numeric: Some(0),
                     numeric: None,
-                    kanji: None
+                    kanji: None,
+                    end: 1
                 },
             ]
         );
@@ -709,109 +773,127 @@ mod tests {
                     byte: Some(0),
                     alpha_numeric: Some(3),
                     numeric: Some(7),
-                    kanji: None
+                    kanji: None,
+                    end: 18
                 },
                 DistToNextType {
                     byte: Some(0),
                     alpha_numeric: Some(2),
                     numeric: Some(6),
-                    kanji: None
+                    kanji: None,
+                    end: 17
                 },
                 DistToNextType {
                     byte: Some(0),
                     alpha_numeric: Some(1),
                     numeric: Some(5),
-                    kanji: None
+                    kanji: None,
+                    end: 16
                 },
                 DistToNextType {
                     byte: Some(10),
                     alpha_numeric: Some(0),
                     numeric: Some(4),
-                    kanji: None
+                    kanji: None,
+                    end: 15
                 },
                 DistToNextType {
                     byte: Some(9),
                     alpha_numeric: Some(0),
                     numeric: Some(3),
-                    kanji: None
+                    kanji: None,
+                    end: 14
                 },
                 DistToNextType {
                     byte: Some(8),
                     alpha_numeric: Some(0),
                     numeric: Some(2),
-                    kanji: None
+                    kanji: None,
+                    end: 13
                 },
                 DistToNextType {
                     byte: Some(7),
                     alpha_numeric: Some(0),
                     numeric: Some(1),
-                    kanji: None
+                    kanji: None,
+                    end: 12
                 },
                 DistToNextType {
                     byte: Some(6),
                     alpha_numeric: Some(4),
                     numeric: Some(0),
-                    kanji: None
+                    kanji: None,
+                    end: 11
                 },
                 DistToNextType {
                     byte: Some(5),
                     alpha_numeric: Some(3),
                     numeric: Some(0),
-                    kanji: None
+                    kanji: None,
+                    end: 10
                 },
                 DistToNextType {
                     byte: Some(4),
                     alpha_numeric: Some(2),
                     numeric: Some(0),
-                    kanji: None
+                    kanji: None,
+                    end: 9
                 },
                 DistToNextType {
                     byte: Some(3),
                     alpha_numeric: Some(1),
                     numeric: Some(0),
-                    kanji: None
+                    kanji: None,
+                    end: 8
                 },
                 DistToNextType {
                     byte: Some(2),
                     alpha_numeric: Some(0),
                     numeric: Some(4),
-                    kanji: None
+                    kanji: None,
+                    end: 7
                 },
                 DistToNextType {
                     byte: Some(1),
                     alpha_numeric: Some(0),
                     numeric: Some(3),
-                    kanji: None
+                    kanji: None,
+                    end: 6
                 },
                 DistToNextType {
                     byte: Some(0),
                     alpha_numeric: Some(4),
                     numeric: Some(2),
-                    kanji: None
+                    kanji: None,
+                    end: 5
                 },
                 DistToNextType {
                     byte: Some(0),
                     alpha_numeric: Some(3),
                     numeric: Some(1),
-                    kanji: None
+                    kanji: None,
+                    end: 4
                 },
                 DistToNextType {
                     byte: None,
                     alpha_numeric: Some(2),
                     numeric: Some(0),
-                    kanji: None
+                    kanji: None,
+                    end: 3
                 },
                 DistToNextType {
                     byte: None,
                     alpha_numeric: Some(1),
                     numeric: Some(0),
-                    kanji: None
+                    kanji: None,
+                    end: 2
                 },
                 DistToNextType {
                     byte: None,
                     alpha_numeric: Some(0),
                     numeric: None,
-                    kanji: None
+                    kanji: None,
+                    end: 1
                 },
             ]
         );
