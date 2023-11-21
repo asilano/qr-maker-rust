@@ -70,9 +70,6 @@ impl QRGenerator {
         let mut image_builder = ImageBuilder::new(self.options.qr_type.unwrap(), self.options.version.unwrap(), &message_sequence, self.options.correction_level.unwrap());
         image_builder.build_qr_image();
 
-        // let unmasked_image: GrayImage = self.build_qr_image(message_sequence);
-        // let masked_image: GrayImage = mask_qr_image(unmasked_image);
-        // generate_format_and_version_info(...);
         self.save_qr_image(&"./qr_code.png".to_string(), image_builder.get_image())?;
         Ok("./qr_code.png".to_string())
     }

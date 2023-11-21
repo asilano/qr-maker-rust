@@ -50,15 +50,6 @@ impl<const PRIME: u32, const POWER: u32, const PRIME_POLY: u32, const ALPHA_POLY
   }
 }
 
-// impl<Poly> GaloisField<Poly>
-// where Poly: Clone + PartialEq + Debug,
-//   for<'a> &'a Poly: Rem<Output = Poly>
-// {
-//   pub fn reduce_poly_of_poly(&self, poly: Polynomial<Poly>) -> Polynomial<Poly> {
-//     Polynomial::from(poly.coefficients.into_iter().map(|coeff_poly| self.make_polynomial(coeff_poly).poly).collect::<Vec<Poly>>())
-//   }
-// }
-
 #[derive(Debug)]
 pub struct PolyWithinGF<GF: IsGaloisField>
 where
