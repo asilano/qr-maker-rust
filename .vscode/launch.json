@@ -19,7 +19,7 @@
           "kind": "bin"
         }
       },
-      "args": [],
+      "args": ["[package]\nname = \"qr-generator\"\nversion = \"0.1.0\"\nedition = \"2021\""],
       "cwd": "${workspaceFolder}"
     },
     {

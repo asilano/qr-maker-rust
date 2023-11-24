@@ -23,7 +23,18 @@ struct DistToNextType {
     alpha_numeric: Option<usize>,
     kanji: Option<usize>,
     byte: Option<usize>,
-    end: usize
+    end: usize,
+}
+impl DistToNextType {
+    fn run_length(&self) -> usize {
+        [self.numeric, self.alpha_numeric, self.kanji, self.byte, Some(self.end)].iter().filter_map(|d| {
+            if let Some(num) = d {
+                if *num == 0 { None } else { *d }
+            } else {
+                None
+            }
+        }).min().unwrap()
+    }
 }
 
 pub struct Encoder<'a> {
@@ -73,9 +84,9 @@ impl<'a> Encoder<'a> {
             .peekable();
         while input_iter.peek().is_some() {
             let (next_encoding, mut bit_run, char_count) = match current_encoding {
-                EncodingModes::Numeric => Self::encode_numeric_run(&mut input_iter),
-                EncodingModes::AlphaNumeric => self.encode_alphanumeric_run(&mut input_iter),
-                EncodingModes::Byte => self.encode_byte_run(&mut input_iter),
+                EncodingModes::Numeric => Self::encode_numeric_run(&mut input_iter, dynamic_mode)?,
+                EncodingModes::AlphaNumeric => self.encode_alphanumeric_run(&mut input_iter, dynamic_mode)?,
+                EncodingModes::Byte => self.encode_byte_run(&mut input_iter, dynamic_mode)?,
                 _ => unreachable!(),
             };
             self.output_data
@@ -210,7 +221,8 @@ impl<'a> Encoder<'a> {
 
     fn encode_numeric_run<'b, Input>(
         input: &mut Peekable<Input>,
-    ) -> (EncodingModes, BitVec<u8, Msb0>, usize)
+        dynamic: bool
+    ) -> Result<(EncodingModes, BitVec<u8, Msb0>, usize), EncodingError>
     where
         Input: Iterator<Item = (char, &'b DistToNextType)>,
     {
@@ -238,18 +250,22 @@ impl<'a> Encoder<'a> {
         }
 
         let next_mode = if let Some(&(c, _)) = input.peek() {
+            if !dynamic {
+                return Err(EncodingError::new("Need to change mode, but not dynamic"));
+            }
             Self::char_type(c)
         } else {
             // Doesn't matter
             EncodingModes::Numeric
         };
-        (next_mode, encoded_numbers, char_count)
+        Ok((next_mode, encoded_numbers, char_count))
     }
 
     fn encode_alphanumeric_run<'b, Input>(
         &self,
         input: &mut Peekable<Input>,
-    ) -> (EncodingModes, BitVec<u8, Msb0>, usize)
+        dynamic: bool
+    ) -> Result<(EncodingModes, BitVec<u8, Msb0>, usize), EncodingError>
     where
         Input: Iterator<Item = (char, &'b DistToNextType)>,
     {
@@ -259,11 +275,12 @@ impl<'a> Encoder<'a> {
                 (10..=26) => 15,
                 (27..) => 17,
             };
+            let should_switch_down = c.is_ascii_digit()
+                && distances.alpha_numeric.unwrap_or(usize::MAX)
+                    .min(distances.byte.unwrap_or(usize::MAX))
+                    .min(distances.end) >= min_dist_to_non_num;
             Self::is_qr_alphanumeric(c)
-                && (!c.is_ascii_digit()
-                    || distances.alpha_numeric.unwrap_or(usize::MAX)
-                        .min(distances.byte.unwrap_or(usize::MAX)
-                        .min(distances.end)) < min_dist_to_non_num)
+                && (!should_switch_down || !dynamic)
         });
         let mut char_count = 0usize;
         let mut encoded_alphanums = bitvec![u8, Msb0;];
@@ -287,44 +304,55 @@ impl<'a> Encoder<'a> {
         }
 
         let next_mode = if let Some(&(c, _)) = input.peek() {
+            if !dynamic {
+                return Err(EncodingError::new("Need to change mode, but not dynamic"))
+            }
             Self::char_type(c)
         } else {
             // Doesn't matter
             EncodingModes::Numeric
         };
-        (next_mode, encoded_alphanums, char_count)
+        Ok((next_mode, encoded_alphanums, char_count))
     }
 
     fn encode_byte_run<'b, Input>(
         &self,
         input: &mut Peekable<Input>,
-    ) -> (EncodingModes, BitVec<u8, Msb0>, usize)
+        dynamic: bool
+    ) -> Result<(EncodingModes, BitVec<u8, Msb0>, usize), EncodingError>
     where
         Input: Iterator<Item = (char, &'b DistToNextType)>,
     {
-        let bytes = input.peeking_take_while(|&(c, distances)| {
-            let min_dist_alphanum_to_byte = match self.size_estimate {
-                (0..=9) => 11,
-                (10..=26) => 15,
-                (27..) => 16,
-            };
-            let min_dist_num_to_byte = match self.size_estimate {
-                (0..=9) => 6,
-                (10..=26) => 8,
-                (27..) => 9,
-            };
-            let min_dist_num_to_alphanum = match self.size_estimate {
-                (0..=9) => 6,
-                (10..=26) => 7,
-                (27..) => 8,
-            };
-
-            let change_to_alphanum = Self::is_qr_alphanumeric(c)
-                && distances.byte.unwrap_or(usize::MAX).min(distances.end) >= min_dist_alphanum_to_byte;
-            let change_to_numeric = c.is_ascii_digit()
+        let min_dist_alphanum_to_byte = match self.size_estimate {
+            (0..=9) => 11,
+            (10..=26) => 15,
+            (27..) => 16,
+        };
+        let min_dist_num_to_byte = match self.size_estimate {
+            (0..=9) => 6,
+            (10..=26) => 8,
+            (27..) => 9,
+        };
+        let min_dist_num_to_alphanum = match self.size_estimate {
+            (0..=9) => 6,
+            (10..=26) => 7,
+            (27..) => 8,
+        };
+        let change_to_alphanum = |c, distances: &DistToNextType| -> bool {
+            Self::is_qr_alphanumeric(c)
+                && distances.byte.unwrap_or(usize::MAX).min(distances.end) >= min_dist_alphanum_to_byte
+        };
+        let change_to_numeric = |c: char, distances: &DistToNextType| -> bool {
+            // TODO: needs to depend on run length as well!
+            c.is_ascii_digit()
                 && (distances.byte.unwrap_or(usize::MAX).min(distances.end) >= min_dist_num_to_byte
-                    || distances.alpha_numeric.unwrap_or(usize::MAX).min(distances.end) >= min_dist_num_to_alphanum);
-            !(change_to_alphanum || change_to_numeric)
+                    || distances.alpha_numeric.unwrap_or(usize::MAX).min(distances.run_length()).min(distances.end) >= min_dist_num_to_alphanum)
+        };
+
+        let bytes = input.peeking_take_while(|&(c, distances)| {
+            let should_change_to_alphanum = change_to_alphanum(c, distances);
+            let should_change_to_numeric = change_to_numeric(c, distances);
+            !(should_change_to_alphanum || should_change_to_numeric) || !dynamic
         });
 
         let mut byte_count = 0usize;
@@ -342,13 +370,22 @@ impl<'a> Encoder<'a> {
             }
         }
 
-        let next_mode = if let Some(&(c, _)) = input.peek() {
-            Self::char_type(c)
+        let next_mode = if let Some(&(c, distances)) = input.peek() {
+            if !dynamic {
+                return Err(EncodingError::new("Need to change mode, but not dynamic"))
+            }
+            if change_to_alphanum(c, distances) {
+                EncodingModes::AlphaNumeric
+            } else if change_to_numeric(c, distances) {
+                EncodingModes::Numeric
+            } else {
+                unreachable!()
+            }
         } else {
             // Doesn't matter
             EncodingModes::Byte
         };
-        (next_mode, encoded_bytes, byte_count)
+        Ok((next_mode, encoded_bytes, byte_count))
     }
 
     fn sequence_preamble(&self, encoding: EncodingModes, char_count: usize) -> BitVec<u8, Msb0> {
