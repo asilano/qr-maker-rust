@@ -67,7 +67,12 @@ impl QRGenerator {
 
         let message_sequence: Vec<u8> = error_corrector.interleave().collect();
 
-        let mut image_builder = ImageBuilder::new(self.options.qr_type.unwrap(), self.options.version.unwrap(), &message_sequence, self.options.correction_level.unwrap());
+        let mut image_builder = ImageBuilder::new(
+            self.options.qr_type.unwrap(),
+            self.options.version.unwrap(),
+            &message_sequence,
+            self.options.correction_level.unwrap()
+        );
         image_builder.build_qr_image();
 
         self.save_qr_image(&"./qr_code.png".to_string(), image_builder.get_image())?;
@@ -87,7 +92,7 @@ impl QRGenerator {
             quiet_width as i64,
             quiet_width as i64,
         );
-        let scale_factor = 5;
+        let scale_factor = 10;
         let scaled_size = full_dimension * scale_factor;
         let scaled_image = imageops::resize(
             &full_image,
